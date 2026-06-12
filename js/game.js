@@ -3,7 +3,7 @@
    Engine + persistence + Supabase sync + audio hooks
    ===================================================== */
 "use strict";
-const COLS = 8, ROWS = 8, CELL = 60;
+const COLS = 10, ROWS = 10, CELL = 48;
 const GEM_COUNT = 6;
 const GEMS = [
   {name:'Ruby',     c1:'#ff7d6e', c2:'#c0271d', shape:'diamond'},
@@ -42,9 +42,12 @@ function uuid(){
 function loadProfile(){
   try{
     const p = JSON.parse(localStorage.getItem(STORE_KEY));
-    if (p && p.id) return p;
+    if (p && p.id){
+      if (p.difficulty!=='hard' && p.difficulty!=='easy') p.difficulty = 'easy';
+      return p;
+    }
   }catch(e){/* corrupt -> reset */}
-  return { id: uuid(), name:'', unlocked:0, bestScore:0, music:true, sfx:true, mode:'timed' };
+  return { id: uuid(), name:'', unlocked:0, bestScore:0, music:true, sfx:true, mode:'timed', difficulty:'easy' };
 }
 function saveProfile(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(profile)); }catch(e){/* storage full/blocked */}
@@ -68,6 +71,9 @@ let floaters = [];
 let lastTs = 0;
 let shakeT = 0;
 let runSubmitted = false;        // guards double score submission per run
+let idleT = 0;                   // seconds of no player input while idle
+let hintCells = null;            // {a:{r,c}, b:{r,c}} valid swap to highlight
+const HINT_DELAY = 5;            // seconds before a hint appears
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -78,28 +84,36 @@ const beep = (f,d,t,g) => window.SWMusic && SWMusic.beep(f,d,t,g);
 function makePiece(gem){ return {kind:'gem', gem, special:null, oy:0, ox:0, vy:0, scale:1, dying:0}; }
 function makeStone(){ return {kind:'stone', gem:-1, special:null, oy:0, ox:0, vy:0, scale:1, dying:0}; }
 
-/* ---------- level layouts ---------- */
+/* ---------- level layouts (size-agnostic) ---------- */
 function layerAt(lv, r, c){
-  const edge = (r===0||r===ROWS-1||c===0||c===COLS-1);
+  const LR = ROWS-1, LC = COLS-1;
+  const m1 = Math.floor(ROWS/2)-1, m2 = Math.floor(ROWS/2);
+  const edge = (r===0||r===LR||c===0||c===LC);
   switch(lv){
     case 0:  return 1;
     case 1:  return edge ? 2 : 1;
     case 2:  return ((r+c)%2===0) ? 2 : 1;
-    case 3:  return (r===3||r===4||c===3||c===4) ? 2 : 1;
-    case 4:  return ((r<2&&c<2)||(r<2&&c>5)||(r>5&&c<2)||(r>5&&c>5)) ? 2 : 1;
+    case 3:  return (r===m1||r===m2||c===m1||c===m2) ? 2 : 1;
+    case 4:  return ((r<3&&c<3)||(r<3&&c>LC-3)||(r>LR-3&&c<3)||(r>LR-3&&c>LC-3)) ? 2 : 1;
     case 5:  return (r>=ROWS-3) ? 2 : 1;
-    case 6:  return (Math.abs(r-c)<=1 || Math.abs(r-(COLS-1-c))<=1) ? 2 : 1;
+    case 6:  return (Math.abs(r-c)<=1 || Math.abs(r-(LC-c))<=1) ? 2 : 1;
     case 7:  return (r%2===0) ? 2 : 1;
-    case 8:  return (c>=2&&c<=5&&r>=2&&r<=5) ? 1 : 2;
+    case 8:  return (c>=3&&c<=LC-3&&r>=3&&r<=LR-3) ? 1 : 2;
     case 9:  return ((r+c)%2===0) ? 1 : 2;
-    case 10: return (r<2||r>5) ? 2 : ((c<2||c>5)?2:1);
+    case 10: return (r<3||r>LR-3) ? 2 : ((c<3||c>LC-3)?2:1);
     case 11: return (c%2===0) ? 2 : 1;
-    case 12: return ((r>=1&&r<=6&&c>=1&&c<=6) && !(r>=3&&r<=4&&c>=3&&c<=4)) ? 2 : 1;
+    case 12: return ((r>=1&&r<=LR-1&&c>=1&&c<=LC-1) && !(r>=m1&&r<=m2&&c>=m1&&c<=m2)) ? 2 : 1;
     default: return 2;
   }
 }
-function quotaFor(lv){ return Math.min(3 + Math.floor(lv/2), 8); }
-function timeFor(lv){ return 130 + lv*8; }
+function quotaFor(lv){
+  if (profile.difficulty==='hard') return Math.min(4 + Math.floor(lv/2), 8);
+  return Math.min(3 + Math.floor(lv/2), 7);
+}
+function timeFor(lv){
+  if (profile.difficulty==='hard') return 140 + lv*8;
+  return 170 + lv*10;
+}
 
 /* ---------- board setup ---------- */
 function gemSafeAt(r,c){
@@ -127,10 +141,11 @@ function startLevel(lv){
   stonesCollected = 0;
   chain = 0; selected = null; swapInfo = null;
   particles = []; floaters = [];
+  resetHint();
   timeMax = timeFor(lv); timeLeft = timedMode ? timeMax : Infinity;
   state = 'idle';
   ensureMoves();
-  syncHud(`Level ${lv+1}: shatter every tile, deliver ${stoneQuota} cornerstones.`);
+  syncHud(`Level ${lv+1} (${profile.difficulty==='hard'?'Hard':'Easy'}): shatter every tile, deliver ${stoneQuota} cornerstones.`);
   hideOverlays();
 }
 
@@ -188,6 +203,18 @@ function hasMoves(){
   }
   return false;
 }
+function findHint(){
+  const moves = [];
+  for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
+    if (!grid[r][c] || grid[r][c].kind!=='gem') continue;
+    if (c+1<COLS && grid[r][c+1] && grid[r][c+1].kind==='gem' && wouldMatchAfterSwap(r,c,r,c+1))
+      moves.push({a:{r,c}, b:{r,c:c+1}});
+    if (r+1<ROWS && grid[r+1][c] && grid[r+1][c].kind==='gem' && wouldMatchAfterSwap(r,c,r+1,c))
+      moves.push({a:{r,c}, b:{r:r+1,c}});
+  }
+  return moves.length ? moves[rnd(moves.length)] : null;
+}
+function resetHint(){ idleT = 0; hintCells = null; }
 function ensureMoves(){
   let guard = 0;
   while (!hasMoves() && guard++ < 60){
@@ -309,7 +336,7 @@ function applyGravity(){
       spawnDepth++;
       let p;
       const stonesOnBoard = countStonesOnBoard();
-      if (stonesToSpawn>0 && stonesOnBoard<2 && Math.random()<0.16){
+      if (stonesToSpawn>0 && stonesOnBoard<3 && Math.random()<0.16){
         p = makeStone(); stonesToSpawn--;
       } else {
         p = makePiece(rnd(GEM_COUNT));
@@ -353,7 +380,7 @@ function persistProgress(){
       name: profile.name || 'Builder',
       level_reached: Math.min(levelIndex+1, TOTAL_LEVELS),
       best_score: profile.bestScore,
-      settings: { music: profile.music, sfx: profile.sfx, mode: profile.mode },
+      settings: { music: profile.music, sfx: profile.sfx, mode: profile.mode, difficulty: profile.difficulty },
     }).catch(()=>{ flash('Offline — progress saved on this device.'); });
   }
 }
@@ -422,6 +449,7 @@ function trySwap(a,b){
 }
 cv.addEventListener('pointerdown', e=>{
   if (window.SWMusic) SWMusic.start(); // satisfy autoplay policy
+  resetHint();
   if (state!=='idle') return;
   const cel = cellFromEvent(e);
   if (!cel) return;
@@ -461,6 +489,14 @@ function update(dt){
   });
   floaters = floaters.filter(f=>{ f.t += dt; return f.t < 0.9; });
   if (shakeT>0) shakeT -= dt;
+
+  // hint timer: only ticks while waiting for player input
+  if (state==='idle'){
+    idleT += dt;
+    if (!hintCells && idleT >= HINT_DELAY) hintCells = findHint();
+  } else {
+    idleT = 0; hintCells = null;
+  }
 
   if (state==='swapping' && swapInfo){
     swapInfo.t += dt*6;
@@ -672,6 +708,18 @@ function draw(){
     ctx.stroke();
   }
 
+  // hint: pulsing rings on a valid swap pair after idling
+  if (hintCells && state==='idle'){
+    const glow = 0.45 + 0.35*Math.sin(performance.now()/200);
+    ctx.strokeStyle = `rgba(255,233,173,${glow})`;
+    ctx.lineWidth = 3.5;
+    for (const cell of [hintCells.a, hintCells.b]){
+      const pul = 3+Math.sin(performance.now()/180)*2;
+      roundRect(ctx, cell.c*CELL+2-pul/2, cell.r*CELL+2-pul/2, CELL-4+pul, CELL-4+pul, 10);
+      ctx.stroke();
+    }
+  }
+
   for (const p of particles){
     ctx.globalAlpha = Math.max(0, 1 - p.t/p.life);
     ctx.fillStyle = p.col;
@@ -715,10 +763,76 @@ function drawWonderPanel(){
   drawWonderShape(wctx, wIdx, W, H-18);
   wctx.restore();
 
-  if (prog<1 && state!=='menu'){
-    wctx.strokeStyle = 'rgba(255,233,173,0.7)'; wctx.setLineDash([4,4]);
-    wctx.beginPath(); wctx.moveTo(8,(H-18)-revealH); wctx.lineTo(W-8,(H-18)-revealH); wctx.stroke();
-    wctx.setLineDash([]);
+  drawWorkers(wctx, W, H-18);
+}
+
+/* ---------- animated builders (stateless, driven by the clock) ---------- */
+function drawWorkers(g, W, groundY){
+  const t = performance.now()/1000;
+  // three walkers crossing the ground, two carrying cornerstones
+  const walkers = [
+    {speed:26, off:0,    dir: 1, carry:true },
+    {speed:20, off:0.45, dir:-1, carry:false},
+    {speed:32, off:0.78, dir: 1, carry:true },
+  ];
+  for (const w of walkers){
+    const span = W + 36;
+    let x = ((t*w.speed + w.off*span) % span) - 18;
+    if (w.dir<0) x = W - x;
+    drawWalker(g, x, groundY, t*7 + w.off*10, w.dir, w.carry);
+  }
+  // one hammerer working at the base of the wonder
+  drawHammerer(g, W*0.42 + 52, groundY, t);
+}
+function drawWalker(g, x, gy, phase, dir, carry){
+  const s = Math.sin(phase), c = Math.cos(phase);
+  const bob = Math.abs(s)*1.2;
+  const hipY = gy - 7 - bob, headY = gy - 13.5 - bob;
+  g.strokeStyle = '#1c1326'; g.fillStyle = '#1c1326';
+  g.lineWidth = 1.6; g.lineCap = 'round';
+  // legs
+  g.beginPath();
+  g.moveTo(x, hipY); g.lineTo(x + dir*s*3.2, gy);
+  g.moveTo(x, hipY); g.lineTo(x - dir*s*3.2, gy);
+  // body
+  g.moveTo(x, hipY); g.lineTo(x, headY+2.5);
+  // arms (opposite swing; carriers keep one arm up on the load)
+  g.moveTo(x, headY+4.5); g.lineTo(x - dir*c*3.0, hipY-1);
+  if (carry) { g.moveTo(x, headY+4.5); g.lineTo(x + dir*1.8, headY-1.5); }
+  else       { g.moveTo(x, headY+4.5); g.lineTo(x + dir*c*3.0, hipY-1); }
+  g.stroke();
+  // head
+  g.beginPath(); g.arc(x, headY, 2.3, 0, Math.PI*2); g.fill();
+  // carried stone block on the shoulder
+  if (carry){
+    g.fillStyle = '#cfd6df';
+    g.fillRect(x + dir*0.5 - 3, headY - 6.5, 6, 4.4);
+    g.strokeStyle = '#75808e'; g.lineWidth = 0.8;
+    g.strokeRect(x + dir*0.5 - 3, headY - 6.5, 6, 4.4);
+  }
+}
+function drawHammerer(g, x, gy, t){
+  const swing = Math.sin(t*5);                 // -1..1 hammer cycle
+  const a = -0.5 - Math.max(0, swing)*1.1;     // arm angle: raise then strike
+  const hipY = gy - 7, headY = gy - 13.5;
+  g.strokeStyle = '#1c1326'; g.fillStyle = '#1c1326';
+  g.lineWidth = 1.6; g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(x, hipY); g.lineTo(x-2.6, gy);
+  g.moveTo(x, hipY); g.lineTo(x+2.6, gy);
+  g.moveTo(x, hipY); g.lineTo(x, headY+2.5);
+  g.moveTo(x, headY+4.5); g.lineTo(x-3, hipY-1); // rear arm
+  g.stroke();
+  g.beginPath(); g.arc(x, headY, 2.3, 0, Math.PI*2); g.fill();
+  // hammer arm + head
+  const hx = x + Math.cos(a)*7, hy = headY+4.5 + Math.sin(a)*7;
+  g.beginPath(); g.moveTo(x, headY+4.5); g.lineTo(hx, hy); g.stroke();
+  g.fillStyle = '#75808e';
+  g.fillRect(hx-2.2, hy-2.2, 4.4, 4.4);
+  // strike spark at the moment of impact
+  if (swing < -0.86){
+    g.fillStyle = 'rgba(255,233,173,0.9)';
+    g.beginPath(); g.arc(x+7.5, gy-2, 2.1, 0, Math.PI*2); g.fill();
   }
 }
 function drawWonderShape(g, idx, W, baseY){
@@ -786,7 +900,7 @@ function syncHud(message){
   $('wonderName').textContent = WONDERS[wIdx].name;
   $('wonderSub').textContent = WONDERS[wIdx].sub;
   $('score').textContent = score.toLocaleString();
-  $('level').textContent = (levelIndex+1)+' / '+TOTAL_LEVELS;
+  $('level').textContent = (levelIndex+1)+' / '+TOTAL_LEVELS+' · '+(profile.difficulty==='hard'?'Hard':'Easy');
   $('stones').textContent = stonesCollected+' / '+stoneQuota;
   const strip = $('wondersStrip');
   strip.innerHTML='';
@@ -868,6 +982,12 @@ function beginRun(lv, timed){
 $('btnTimed').addEventListener('click', ()=> beginRun(0, true));
 $('btnRelax').addEventListener('click', ()=> beginRun(0, false));
 $('btnContinue').addEventListener('click', ()=> beginRun(Math.min(profile.unlocked, TOTAL_LEVELS-1), profile.mode!=='relaxed'));
+function refreshDiff(){
+  $('btnEasy').classList.toggle('sel', profile.difficulty==='easy');
+  $('btnHard').classList.toggle('sel', profile.difficulty==='hard');
+}
+$('btnEasy').addEventListener('click', ()=>{ profile.difficulty='easy'; saveProfile(); refreshDiff(); });
+$('btnHard').addEventListener('click', ()=>{ profile.difficulty='hard'; saveProfile(); refreshDiff(); });
 $('btnNext').addEventListener('click', ()=>{
   if (levelIndex===TOTAL_LEVELS-1){ showMenu(); }
   else startLevel(levelIndex+1);
@@ -898,6 +1018,7 @@ function boot(){
   for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) grid[r][c]=makePiece(gemSafeAt(r,c));
   if (window.SWMusic){ SWMusic.musicOn = profile.music; SWMusic.sfxOn = profile.sfx; }
   refreshToggles();
+  refreshDiff();
   $('nameInput').value = profile.name || '';
   $('verTag').textContent = window.SW_CONFIG.APP_VERSION;
   $('netTag').textContent = navigator.onLine===false ? 'offline' : 'online';

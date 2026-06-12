@@ -73,6 +73,17 @@ header p{font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:#
 .btn:hover{filter:brightness(1.07)} .btn:active{transform:translateY(1px)}
 .btn.ghost{background:transparent; color:var(--gold); border:1px solid var(--gold); box-shadow:none}
 .modeRow{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+.pick{
+  font-family:'Cinzel',serif; font-weight:700; letter-spacing:.1em; font-size:13px;
+  padding:8px 22px; border-radius:8px; cursor:pointer;
+  background:#1a1233; color:#cdbbf3; border:1px solid #4a3a78;
+}
+.pick:hover{border-color:var(--gold)}
+.pick.sel{
+  background:linear-gradient(180deg,var(--goldhi),var(--gold) 55%,#c79b3f);
+  color:var(--ink); border-color:var(--goldhi);
+  box-shadow:0 3px 10px rgba(232,198,106,.3);
+}
 .hidden{display:none !important}
 #nameInput{
   background:#140e29; color:var(--sandlight); border:1px solid #4a3a78; border-radius:8px;
