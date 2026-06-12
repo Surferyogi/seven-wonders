@@ -1,7 +1,7 @@
 /* Seven Wonders — service worker
    Cache-first app shell; Supabase API calls always go to the network.
    Bump CACHE_VERSION on every release together with APP_VERSION in js/config.js. */
-const CACHE_VERSION = 'sw-wonders-v2026-06-12-1014';
+const CACHE_VERSION = 'sw-wonders-v2026-06-12-1141';
 const SHELL = [
   './',
   './index.html',
