@@ -834,6 +834,78 @@ function drawHammerer(g, x, gy, t){
     g.fillStyle = 'rgba(255,233,173,0.9)';
     g.beginPath(); g.arc(x+7.5, gy-2, 2.1, 0, Math.PI*2); g.fill();
   }
+
+  drawWorkers(wctx, W, H-18);
+}
+
+/* ---------- animated builders (stateless, driven by the clock) ---------- */
+function drawWorkers(g, W, groundY){
+  const t = performance.now()/1000;
+  // three walkers crossing the ground, two carrying cornerstones
+  const walkers = [
+    {speed:26, off:0,    dir: 1, carry:true },
+    {speed:20, off:0.45, dir:-1, carry:false},
+    {speed:32, off:0.78, dir: 1, carry:true },
+  ];
+  for (const w of walkers){
+    const span = W + 36;
+    let x = ((t*w.speed + w.off*span) % span) - 18;
+    if (w.dir<0) x = W - x;
+    drawWalker(g, x, groundY, t*7 + w.off*10, w.dir, w.carry);
+  }
+  // one hammerer working at the base of the wonder
+  drawHammerer(g, W*0.42 + 52, groundY, t);
+}
+function drawWalker(g, x, gy, phase, dir, carry){
+  const s = Math.sin(phase), c = Math.cos(phase);
+  const bob = Math.abs(s)*1.2;
+  const hipY = gy - 7 - bob, headY = gy - 13.5 - bob;
+  g.strokeStyle = '#1c1326'; g.fillStyle = '#1c1326';
+  g.lineWidth = 1.6; g.lineCap = 'round';
+  // legs
+  g.beginPath();
+  g.moveTo(x, hipY); g.lineTo(x + dir*s*3.2, gy);
+  g.moveTo(x, hipY); g.lineTo(x - dir*s*3.2, gy);
+  // body
+  g.moveTo(x, hipY); g.lineTo(x, headY+2.5);
+  // arms (opposite swing; carriers keep one arm up on the load)
+  g.moveTo(x, headY+4.5); g.lineTo(x - dir*c*3.0, hipY-1);
+  if (carry) { g.moveTo(x, headY+4.5); g.lineTo(x + dir*1.8, headY-1.5); }
+  else       { g.moveTo(x, headY+4.5); g.lineTo(x + dir*c*3.0, hipY-1); }
+  g.stroke();
+  // head
+  g.beginPath(); g.arc(x, headY, 2.3, 0, Math.PI*2); g.fill();
+  // carried stone block on the shoulder
+  if (carry){
+    g.fillStyle = '#cfd6df';
+    g.fillRect(x + dir*0.5 - 3, headY - 6.5, 6, 4.4);
+    g.strokeStyle = '#75808e'; g.lineWidth = 0.8;
+    g.strokeRect(x + dir*0.5 - 3, headY - 6.5, 6, 4.4);
+  }
+}
+function drawHammerer(g, x, gy, t){
+  const swing = Math.sin(t*5);                 // -1..1 hammer cycle
+  const a = -0.5 - Math.max(0, swing)*1.1;     // arm angle: raise then strike
+  const hipY = gy - 7, headY = gy - 13.5;
+  g.strokeStyle = '#1c1326'; g.fillStyle = '#1c1326';
+  g.lineWidth = 1.6; g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(x, hipY); g.lineTo(x-2.6, gy);
+  g.moveTo(x, hipY); g.lineTo(x+2.6, gy);
+  g.moveTo(x, hipY); g.lineTo(x, headY+2.5);
+  g.moveTo(x, headY+4.5); g.lineTo(x-3, hipY-1); // rear arm
+  g.stroke();
+  g.beginPath(); g.arc(x, headY, 2.3, 0, Math.PI*2); g.fill();
+  // hammer arm + head
+  const hx = x + Math.cos(a)*7, hy = headY+4.5 + Math.sin(a)*7;
+  g.beginPath(); g.moveTo(x, headY+4.5); g.lineTo(hx, hy); g.stroke();
+  g.fillStyle = '#75808e';
+  g.fillRect(hx-2.2, hy-2.2, 4.4, 4.4);
+  // strike spark at the moment of impact
+  if (swing < -0.86){
+    g.fillStyle = 'rgba(255,233,173,0.9)';
+    g.beginPath(); g.arc(x+7.5, gy-2, 2.1, 0, Math.PI*2); g.fill();
+  }
 }
 function drawWonderShape(g, idx, W, baseY){
   const cx = W*0.42;
