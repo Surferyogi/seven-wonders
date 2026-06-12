@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#160f2e">
+<meta name="description" content="Seven Wonders — an original wonder-building match-3 PWA. Shatter tiles, deliver cornerstones, raise the seven wonders of the ancient world.">
+<title>Seven Wonders — Match 3</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>SEVEN WONDERS</h1>
+  <p>RAISE THE ANCIENT WORLD &middot; MATCH 3</p>
+</header>
+
+<div id="stage">
+  <div id="side">
+    <div id="wonderName">The Great Pyramid</div>
+    <div id="wonderSub">Wonder I &middot; Giza</div>
+    <canvas id="wonderCanvas" width="252" height="150"></canvas>
+    <div id="wondersStrip"></div>
+    <div class="statRow"><span>Score</span><b id="score">0</b></div>
+    <div class="statRow"><span>Level</span><b id="level">1 / 14</b></div>
+    <div class="statRow"><span>Cornerstones</span><b id="stones">0 / 3</b></div>
+    <div class="barWrap"><div id="stoneFill" class="barFill"></div></div>
+    <div class="statRow" id="timeRow"><span>Time</span><b id="timeTxt">2:10</b></div>
+    <div class="barWrap" id="timeBarWrap"><div id="timeFill" class="barFill" style="width:100%"></div></div>
+    <div class="toggleRow">
+      <button class="tog" id="btnMusic" aria-pressed="true">&#9835; Music</button>
+      <button class="tog" id="btnSfx" aria-pressed="true">&#128266; Sound</button>
+      <button class="tog" id="btnQuit">Menu</button>
+    </div>
+    <div id="msg">Match gems on stone tiles to shatter them.</div>
+  </div>
+
+  <div id="boardWrap">
+    <canvas id="board" width="480" height="480"></canvas>
+
+    <div class="overlay" id="menuOverlay">
+      <h2>SEVEN WONDERS AWAIT</h2>
+      <p>Swap adjacent gems to match three or more. Shatter every stone tile and guide the falling <b>cornerstones</b> to the bottom row to raise each wonder.</p>
+      <input id="nameInput" maxlength="24" placeholder="Builder name" autocomplete="off">
+      <div class="modeRow">
+        <button class="btn hidden" id="btnContinue">Continue</button>
+        <button class="btn" id="btnTimed">New Quest</button>
+        <button class="btn ghost" id="btnRelax">Relaxed</button>
+      </div>
+      <div class="modeRow">
+        <button class="btn ghost" id="btnBoard">&#127942; Leaderboard</button>
+      </div>
+      <p class="tiny">Match 4 forges a <b>Bomb Gem</b> &middot; Match 5 forges a <b>Storm Gem</b></p>
+    </div>
+
+    <div class="overlay hidden" id="doneOverlay">
+      <h2 id="doneTitle">LEVEL COMPLETE</h2>
+      <p id="doneText"></p>
+      <button class="btn" id="btnNext">Continue</button>
+    </div>
+
+    <div class="overlay hidden" id="failOverlay">
+      <h2>THE SANDS RAN OUT</h2>
+      <p id="failText">Time has expired. The builders await another attempt.</p>
+      <div class="modeRow">
+        <button class="btn" id="btnRetry">Retry Level</button>
+        <button class="btn ghost" id="btnMenu">Menu</button>
+      </div>
+    </div>
+
+    <div class="overlay hidden" id="boardOverlay">
+      <h2>HALL OF BUILDERS</h2>
+      <ol id="boardList" aria-live="polite"><li class="dim">Loading&hellip;</li></ol>
+      <button class="btn ghost" id="btnBoardBack">Back</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  An original fan-made homage to classic wonder-building match-3 games. All art and music are generated in code; no commercial assets are used.
+  <span id="verTag"></span> &middot; <span id="netTag"></span>
+</footer>
+
+<script src="js/config.js"></script>
+<script src="js/music.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/game.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

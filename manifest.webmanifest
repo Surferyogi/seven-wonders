@@ -1,0 +1,16 @@
+{
+  "name": "Seven Wonders — Match 3",
+  "short_name": "Seven Wonders",
+  "description": "An original wonder-building match-3 game. Shatter tiles, deliver cornerstones, raise the seven wonders of the ancient world.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#160f2e",
+  "theme_color": "#160f2e",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
