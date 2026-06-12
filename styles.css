@@ -73,6 +73,8 @@ header p{font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:#
 .btn:hover{filter:brightness(1.07)} .btn:active{transform:translateY(1px)}
 .btn.ghost{background:transparent; color:var(--gold); border:1px solid var(--gold); box-shadow:none}
 .modeRow{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+.overlay.celebrate{background:rgba(13,9,28,.42); backdrop-filter:none}
+#finaleOverlay{background:transparent; backdrop-filter:none; justify-content:flex-end; padding-bottom:18px}
 .hidden{display:none !important}
 #nameInput{
   background:#140e29; color:var(--sandlight); border:1px solid #4a3a78; border-radius:8px;

@@ -151,6 +151,32 @@
       if (this._sfxGain) this._sfxGain.gain.value = on ? 1 : 0;
     },
 
+    /* original victory flourish for the grand finale: an ascending phrase in the
+       same D double-harmonic scale as the main theme, plucked voice + two doums */
+    flourish() {
+      try {
+        this.init();
+        if (!this.ctx) return;
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const bus = (this.musicOn && this._musicGain) ? this._musicGain : this._sfxGain;
+        if (!bus) return;
+        const t0 = this.ctx.currentTime + 0.05;
+        const seq = [[62, 0], [66, 0.14], [69, 0.28], [73, 0.42], [74, 0.62]];
+        for (const [m, off] of seq) {
+          const o = this.ctx.createOscillator();
+          o.type = 'triangle'; o.frequency.value = this._midiHz(m);
+          const g = this.ctx.createGain();
+          g.gain.setValueAtTime(0.0001, t0 + off);
+          g.gain.exponentialRampToValueAtTime(0.22, t0 + off + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.8);
+          o.connect(g); g.connect(bus);
+          if (this._delay) g.connect(this._delay);
+          o.start(t0 + off); o.stop(t0 + off + 0.9);
+        }
+        if (this.musicOn) { this._doum(t0); this._doum(t0 + 0.62); }
+      } catch (e) { /* audio unavailable */ }
+    },
+
     /* short UI/game sound effects, routed through the SFX bus */
     beep(freq, dur = 0.08, type = 'triangle', gain = 0.05) {
       if (!this.sfxOn) return;

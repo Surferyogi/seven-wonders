@@ -3,6 +3,15 @@
    Engine + persistence + Supabase sync + audio hooks
    ===================================================== */
 "use strict";
+/* visible error trap: surfaces script errors on screen (mobile has no console) */
+window.addEventListener('error', function(e){
+  try{
+    var m = document.getElementById('msg');
+    if (m) m.textContent = '\u26A0 Error: ' + (e.message || 'script error');
+    var v = document.getElementById('verTag');
+    if (v && window.SW_CONFIG) v.textContent = SW_CONFIG.APP_VERSION + ' \u00B7 ERROR';
+  }catch(_){}
+});
 const COLS = 10, ROWS = 10, CELL = 48;
 const GEM_COUNT = 6;
 const GEMS = [
