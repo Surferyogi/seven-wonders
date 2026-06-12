@@ -49,10 +49,6 @@
       <p>Swap adjacent gems to match three or more. Shatter every stone tile and guide the falling <b>cornerstones</b> to the bottom row to raise each wonder.</p>
       <input id="nameInput" maxlength="24" placeholder="Builder name" autocomplete="off">
       <div class="modeRow">
-        <button class="pick sel" id="btnEasy">Easy</button>
-        <button class="pick" id="btnHard">Hard</button>
-      </div>
-      <div class="modeRow">
         <button class="btn hidden" id="btnContinue">Continue</button>
         <button class="btn" id="btnTimed">New Quest</button>
         <button class="btn ghost" id="btnRelax">Relaxed</button>
@@ -81,7 +77,10 @@
     <div class="overlay hidden" id="boardOverlay">
       <h2>HALL OF BUILDERS</h2>
       <ol id="boardList" aria-live="polite"><li class="dim">Loading&hellip;</li></ol>
-      <button class="btn ghost" id="btnBoardBack">Back</button>
+      <div class="modeRow">
+        <button class="btn ghost" id="btnBoardBack">Back</button>
+        <button class="btn ghost" id="btnBoardReset">Reset&hellip;</button>
+      </div>
     </div>
   </div>
 </div>

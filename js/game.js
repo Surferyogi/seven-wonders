@@ -42,12 +42,9 @@ function uuid(){
 function loadProfile(){
   try{
     const p = JSON.parse(localStorage.getItem(STORE_KEY));
-    if (p && p.id){
-      if (p.difficulty!=='hard' && p.difficulty!=='easy') p.difficulty = 'easy';
-      return p;
-    }
+    if (p && p.id) return p;
   }catch(e){/* corrupt -> reset */}
-  return { id: uuid(), name:'', unlocked:0, bestScore:0, music:true, sfx:true, mode:'timed', difficulty:'easy' };
+  return { id: uuid(), name:'', unlocked:0, bestScore:0, music:true, sfx:true, mode:'timed' };
 }
 function saveProfile(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(profile)); }catch(e){/* storage full/blocked */}
@@ -106,14 +103,8 @@ function layerAt(lv, r, c){
     default: return 2;
   }
 }
-function quotaFor(lv){
-  if (profile.difficulty==='hard') return Math.min(4 + Math.floor(lv/2), 8);
-  return Math.min(3 + Math.floor(lv/2), 7);
-}
-function timeFor(lv){
-  if (profile.difficulty==='hard') return 140 + lv*8;
-  return 170 + lv*10;
-}
+function quotaFor(lv){ return Math.min(3 + Math.floor(lv/2), 8); }
+function timeFor(lv){ return 150 + lv*10; }
 
 /* ---------- board setup ---------- */
 function gemSafeAt(r,c){
@@ -145,7 +136,7 @@ function startLevel(lv){
   timeMax = timeFor(lv); timeLeft = timedMode ? timeMax : Infinity;
   state = 'idle';
   ensureMoves();
-  syncHud(`Level ${lv+1} (${profile.difficulty==='hard'?'Hard':'Easy'}): shatter every tile, deliver ${stoneQuota} cornerstones.`);
+  syncHud(`Level ${lv+1}: shatter every tile, deliver ${stoneQuota} cornerstones.`);
   hideOverlays();
 }
 
@@ -380,7 +371,7 @@ function persistProgress(){
       name: profile.name || 'Builder',
       level_reached: Math.min(levelIndex+1, TOTAL_LEVELS),
       best_score: profile.bestScore,
-      settings: { music: profile.music, sfx: profile.sfx, mode: profile.mode, difficulty: profile.difficulty },
+      settings: { music: profile.music, sfx: profile.sfx, mode: profile.mode },
     }).catch(()=>{ flash('Offline — progress saved on this device.'); });
   }
 }
@@ -680,10 +671,6 @@ function draw(){
 
   ctx.fillStyle = 'rgba(232,198,106,0.10)';
   ctx.fillRect(0, (ROWS-1)*CELL, COLS*CELL, CELL);
-  ctx.strokeStyle = 'rgba(232,198,106,0.35)';
-  ctx.setLineDash([6,5]);
-  ctx.strokeRect(1.5,(ROWS-1)*CELL+1.5, COLS*CELL-3, CELL-3);
-  ctx.setLineDash([]);
 
   for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
     const p = grid[r][c];
@@ -900,7 +887,7 @@ function syncHud(message){
   $('wonderName').textContent = WONDERS[wIdx].name;
   $('wonderSub').textContent = WONDERS[wIdx].sub;
   $('score').textContent = score.toLocaleString();
-  $('level').textContent = (levelIndex+1)+' / '+TOTAL_LEVELS+' · '+(profile.difficulty==='hard'?'Hard':'Easy');
+  $('level').textContent = (levelIndex+1)+' / '+TOTAL_LEVELS;
   $('stones').textContent = stonesCollected+' / '+stoneQuota;
   const strip = $('wondersStrip');
   strip.innerHTML='';
@@ -982,12 +969,6 @@ function beginRun(lv, timed){
 $('btnTimed').addEventListener('click', ()=> beginRun(0, true));
 $('btnRelax').addEventListener('click', ()=> beginRun(0, false));
 $('btnContinue').addEventListener('click', ()=> beginRun(Math.min(profile.unlocked, TOTAL_LEVELS-1), profile.mode!=='relaxed'));
-function refreshDiff(){
-  $('btnEasy').classList.toggle('sel', profile.difficulty==='easy');
-  $('btnHard').classList.toggle('sel', profile.difficulty==='hard');
-}
-$('btnEasy').addEventListener('click', ()=>{ profile.difficulty='easy'; saveProfile(); refreshDiff(); });
-$('btnHard').addEventListener('click', ()=>{ profile.difficulty='hard'; saveProfile(); refreshDiff(); });
 $('btnNext').addEventListener('click', ()=>{
   if (levelIndex===TOTAL_LEVELS-1){ showMenu(); }
   else startLevel(levelIndex+1);
@@ -997,6 +978,20 @@ $('btnMenu').addEventListener('click', showMenu);
 $('btnQuit').addEventListener('click', ()=>{ if(state!=='menu') showMenu(); });
 $('btnBoard').addEventListener('click', openLeaderboard);
 $('btnBoardBack').addEventListener('click', showMenu);
+$('btnBoardReset').addEventListener('click', async ()=>{
+  const pin = prompt('Admin PIN to reset the leaderboard:');
+  if (pin===null || pin==='') return;
+  if (!confirm('Permanently delete ALL leaderboard scores?')) return;
+  const list = $('boardList');
+  list.innerHTML = '<li class="dim">Resetting…</li>';
+  try{
+    const n = await SWCloud.resetLeaderboard(pin.trim());
+    flash(`Leaderboard reset — ${n} score${n===1?'':'s'} removed.`);
+    openLeaderboard();
+  }catch(e){
+    list.innerHTML = '<li class="dim">Reset refused — wrong PIN or offline.</li>';
+  }
+});
 
 function refreshToggles(){
   $('btnMusic').setAttribute('aria-pressed', String(profile.music));
@@ -1018,7 +1013,6 @@ function boot(){
   for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) grid[r][c]=makePiece(gemSafeAt(r,c));
   if (window.SWMusic){ SWMusic.musicOn = profile.music; SWMusic.sfxOn = profile.sfx; }
   refreshToggles();
-  refreshDiff();
   $('nameInput').value = profile.name || '';
   $('verTag').textContent = window.SW_CONFIG.APP_VERSION;
   $('netTag').textContent = navigator.onLine===false ? 'offline' : 'online';

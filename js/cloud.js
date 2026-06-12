@@ -68,5 +68,13 @@
     async topScores(limit = 15) {
       return req(`/sw_scores?select=name,score,level,mode,created_at&order=score.desc&limit=${limit}`);
     },
+
+    /* admin: deletes all leaderboard rows; PIN is verified server-side in Postgres */
+    async resetLeaderboard(pin) {
+      return req('/rpc/sw_reset_leaderboard', {
+        method: 'POST',
+        body: JSON.stringify({ p_pin: pin }),
+      });
+    },
   };
 })();
