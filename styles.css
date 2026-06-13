@@ -46,8 +46,6 @@ header p{font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:#
 }
 .tog[aria-pressed="false"]{opacity:.45; text-decoration:line-through}
 .tog:hover{border-color:var(--gold)}
-.tog.exit{color:#e8998a; border-color:#6b3a3a; background:#1f1020;}
-.tog.exit:hover{border-color:#d96b4f; color:#f0b8a8;}
 
 /* ---------- board ---------- */
 #boardWrap{position:relative; flex:0 0 auto}
