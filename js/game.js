@@ -81,6 +81,8 @@ let idleT = 0;                   // seconds of no player input while idle
 let hintCells = null;            // {a:{r,c}, b:{r,c}} valid swap to highlight
 const HINT_DELAY = 5;            // seconds before a hint appears
 let gemCount = GEM_COUNT;        // colors in play this level (5 on level 1)
+const REFILL_COPY_BIAS = 0.14;   // chance a refilled gem copies the gem below it -> slightly more 4/5 matches
+let forgedCount = 0;             // lifetime Bomb/Storm forges (tuning telemetry)
 
 /* ---------- celebrations ---------- */
 const fw = {active:false, until:0, next:0, rockets:[], sparks:[]};
@@ -219,7 +221,7 @@ function quotaFor(lv){
   if (lv===0) return 2;                       // gentler first level
   return Math.min(3 + Math.floor(lv/2), 8);
 }
-function timeFor(lv){ return 150 + lv*10; }
+function timeFor(lv){ return 300; } // 5 minutes per level (flat)
 function gemCountFor(lv){ return lv===0 ? 5 : GEM_COUNT; } // 5 colors on level 1 = easier matches
 
 /* ---------- board setup ---------- */
@@ -391,6 +393,7 @@ function applyMatches(set, forgeAt){
     if (!p || p.kind!=='gem') continue;
     if (forge && key===forge.key){
       p.special = forge.kind; p._spent = false; p.scale = 1.25;
+      forgedCount++;
       continue;
     }
     spawnBurst(c,r,p);
@@ -449,7 +452,10 @@ function applyGravity(){
       if (stonesToSpawn>0 && stonesOnBoard<3 && Math.random()<0.16){
         p = makeStone(); stonesToSpawn--;
       } else {
-        p = makePiece(rnd(gemCount));
+        let g = rnd(gemCount);
+        const below = (r+1<ROWS) ? grid[r+1][c] : null;
+        if (below && below.kind==='gem' && Math.random() < REFILL_COPY_BIAS) g = below.gem;
+        p = makePiece(g);
       }
       p.oy = -spawnDepth*CELL - rnd(20);
       grid[r][c] = p;
