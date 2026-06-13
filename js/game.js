@@ -1323,6 +1323,16 @@ $('btnQuit').addEventListener('click', ()=>{
   if (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting') pauseGame();
   else if (state!=='menu' && state!=='paused') showMenu();
 });
+$('btnExit').addEventListener('click', ()=>{
+  if (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting'||state==='paused'){
+    saveSnapshot();    // explicit save (auto-save already fired, but this guarantees it)
+    stopCelebrations();
+    showMenu();
+    flash('Game saved. Tap Resume Game to continue.');
+  } else {
+    showMenu();        // on menu/done/fail — just navigate
+  }
+});
 $('btnResumePlay').addEventListener('click', unpauseGame);
 $('btnEndGame').addEventListener('click', ()=>{
   saveSnapshot();
