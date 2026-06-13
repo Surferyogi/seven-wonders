@@ -3,6 +3,15 @@
    Engine + persistence + Supabase sync + audio hooks
    ===================================================== */
 "use strict";
+/* visible error trap: surfaces script errors on screen (mobile has no console) */
+window.addEventListener('error', function(e){
+  try{
+    var m = document.getElementById('msg');
+    if (m) m.textContent = '\u26A0 Error: ' + (e.message || 'script error');
+    var v = document.getElementById('verTag');
+    if (v && window.SW_CONFIG) v.textContent = SW_CONFIG.APP_VERSION + ' \u00B7 ERROR';
+  }catch(_){}
+});
 const COLS = 10, ROWS = 10, CELL = 48;
 const GEM_COUNT = 6;
 const GEMS = [
@@ -71,6 +80,111 @@ let runSubmitted = false;        // guards double score submission per run
 let idleT = 0;                   // seconds of no player input while idle
 let hintCells = null;            // {a:{r,c}, b:{r,c}} valid swap to highlight
 const HINT_DELAY = 5;            // seconds before a hint appears
+let gemCount = GEM_COUNT;        // colors in play this level (5 on level 1)
+const REFILL_COPY_BIAS = 0.14;   // chance a refilled gem copies the gem below it -> slightly more 4/5 matches
+let forgedCount = 0;             // lifetime Bomb/Storm forges (tuning telemetry)
+
+/* ---------- celebrations ---------- */
+const fw = {active:false, until:0, next:0, rockets:[], sparks:[]};
+const finale = {active:false, t:0, next:0, btnShown:false, glyphs:[], confetti:[], sparks:[]};
+function startFireworks(durMs){
+  fw.active = true;
+  fw.until = performance.now() + durMs;
+  fw.next = 0;
+  fw.rockets.length = 0; fw.sparks.length = 0;
+}
+function startFinale(){
+  finale.active = true; finale.t = 0; finale.next = 0; finale.btnShown = false;
+  finale.glyphs.length = 0; finale.confetti.length = 0; finale.sparks.length = 0;
+  hideOverlays();
+  if (window.SWMusic) SWMusic.flourish();
+}
+function stopCelebrations(){
+  fw.active = false; fw.rockets.length = 0; fw.sparks.length = 0;
+  finale.active = false; finale.glyphs.length = 0; finale.confetti.length = 0; finale.sparks.length = 0;
+  $('doneOverlay').classList.remove('celebrate');
+}
+
+/* ---------- pause & mid-level save (resume) ---------- */
+const RESUME_KEY = 'sw_resume_v1';
+let pausedFrom = null;
+function pauseGame(){
+  pausedFrom = state;
+  state = 'paused';
+  $('pauseOverlay').classList.remove('hidden');
+}
+function unpauseGame(){
+  $('pauseOverlay').classList.add('hidden');
+  state = pausedFrom || 'idle';
+  pausedFrom = null;
+  resetHint();
+}
+function saveSnapshot(){
+  const cells = [];
+  for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
+    const p = grid[r][c];
+    cells.push(p ? {k:p.kind==='stone'?1:0, g:p.gem, s:p.special||0} : 0);
+  }
+  const snap = {
+    v:1, lv:levelIndex, score, timed:timedMode,
+    timeLeft: timedMode ? Math.max(1, Math.ceil(timeLeft)) : -1,
+    stonesCollected, stonesToSpawn, runSubmitted,
+    tiles: tiles.map(row=>row.slice()),
+    cells,
+  };
+  try{ localStorage.setItem(RESUME_KEY, JSON.stringify(snap)); }catch(e){/* storage blocked */}
+}
+function loadSnapshot(){
+  try{
+    const s = JSON.parse(localStorage.getItem(RESUME_KEY));
+    if (s && s.v===1 && Array.isArray(s.cells) && s.cells.length===ROWS*COLS &&
+        Array.isArray(s.tiles) && s.tiles.length===ROWS &&
+        Number.isInteger(s.lv) && s.lv>=0 && s.lv<TOTAL_LEVELS) return s;
+  }catch(e){/* corrupt */}
+  return null;
+}
+function clearSnapshot(){
+  try{ localStorage.removeItem(RESUME_KEY); }catch(e){}
+}
+function inPlay(){
+  return state==='idle'||state==='swapping'||state==='resolving'||state==='collecting'||state==='paused';
+}
+function autoSave(){ if (inPlay()) saveSnapshot(); }
+function resumeSnapshot(){
+  const s = loadSnapshot();
+  if (!s) return false;
+  levelIndex = s.lv;
+  gemCount = gemCountFor(s.lv);
+  stopCelebrations();
+  grid = []; tiles = [];
+  for (let r=0;r<ROWS;r++){
+    grid.push(new Array(COLS).fill(null));
+    tiles.push(s.tiles[r].slice());
+  }
+  let i = 0;
+  for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
+    const cd = s.cells[i++];
+    if (!cd) continue;
+    const p = cd.k===1 ? makeStone() : makePiece(cd.g);
+    if (cd.s) { p.special = cd.s; p._spent = false; }
+    grid[r][c] = p;
+  }
+  timedMode = s.timed;
+  score = s.score;
+  runSubmitted = !!s.runSubmitted;
+  stoneQuota = quotaFor(s.lv);
+  stonesCollected = s.stonesCollected;
+  stonesToSpawn = s.stonesToSpawn;
+  timeMax = timeFor(s.lv);
+  timeLeft = timedMode ? Math.min(s.timeLeft, timeMax) : Infinity;
+  chain = 0; selected = null; swapInfo = null; pausedFrom = null;
+  particles = []; floaters = [];
+  resetHint();
+  state = 'resolving';   // engine settles, collects any bottom stones, then goes idle
+  syncHud(`Resumed level ${s.lv+1}.`);
+  hideOverlays();
+  return true;
+}
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -103,14 +217,18 @@ function layerAt(lv, r, c){
     default: return 2;
   }
 }
-function quotaFor(lv){ return Math.min(3 + Math.floor(lv/2), 8); }
-function timeFor(lv){ return 150 + lv*10; } // +20s base vs 8x8: 56% more tiles to clear
+function quotaFor(lv){
+  if (lv===0) return 2;                       // gentler first level
+  return Math.min(3 + Math.floor(lv/2), 8);
+}
+function timeFor(lv){ return 300; } // 5 minutes per level (flat)
+function gemCountFor(lv){ return lv===0 ? 5 : GEM_COUNT; } // 5 colors on level 1 = easier matches
 
 /* ---------- board setup ---------- */
 function gemSafeAt(r,c){
   let tries = 0;
   while (true){
-    const g = rnd(GEM_COUNT);
+    const g = rnd(gemCount);
     const h = c>=2 && grid[r][c-1] && grid[r][c-2] && grid[r][c-1].gem===g && grid[r][c-2].gem===g;
     const v = r>=2 && grid[r-1][c] && grid[r-2][c] && grid[r-1][c].gem===g && grid[r-2][c].gem===g;
     if ((!h && !v) || ++tries>40) return g;
@@ -118,6 +236,8 @@ function gemSafeAt(r,c){
 }
 function startLevel(lv){
   levelIndex = lv;
+  gemCount = gemCountFor(lv);
+  stopCelebrations();
   grid = []; tiles = [];
   for (let r=0;r<ROWS;r++){
     grid.push(new Array(COLS).fill(null));
@@ -138,6 +258,7 @@ function startLevel(lv){
   ensureMoves();
   syncHud(`Level ${lv+1}: shatter every tile, deliver ${stoneQuota} cornerstones.`);
   hideOverlays();
+  autoSave();
 }
 
 /* ---------- matching ---------- */
@@ -222,7 +343,7 @@ function ensureMoves(){
     while (m.size>0 && g2++ < 30){
       for (const key of m){
         const [r,c] = key.split(',').map(Number);
-        grid[r][c].gem = rnd(GEM_COUNT);
+        grid[r][c].gem = rnd(gemCount);
       }
       m = findMatches();
     }
@@ -272,6 +393,7 @@ function applyMatches(set, forgeAt){
     if (!p || p.kind!=='gem') continue;
     if (forge && key===forge.key){
       p.special = forge.kind; p._spent = false; p.scale = 1.25;
+      forgedCount++;
       continue;
     }
     spawnBurst(c,r,p);
@@ -330,7 +452,10 @@ function applyGravity(){
       if (stonesToSpawn>0 && stonesOnBoard<3 && Math.random()<0.16){
         p = makeStone(); stonesToSpawn--;
       } else {
-        p = makePiece(rnd(GEM_COUNT));
+        let g = rnd(gemCount);
+        const below = (r+1<ROWS) ? grid[r+1][c] : null;
+        if (below && below.kind==='gem' && Math.random() < REFILL_COPY_BIAS) g = below.gem;
+        p = makePiece(g);
       }
       p.oy = -spawnDepth*CELL - rnd(20);
       grid[r][c] = p;
@@ -395,15 +520,16 @@ function checkComplete(){
     const lastOfWonder = (levelIndex % LEVELS_PER_WONDER) === LEVELS_PER_WONDER-1;
     const lastLevel = levelIndex === TOTAL_LEVELS-1;
     if (timedMode) score += Math.floor(timeLeft)*5;
+    clearSnapshot();
     persistProgress();
     syncHud();
-    const t = $('doneTitle'), x = $('doneText');
     if (lastLevel){
-      t.textContent = 'ALL SEVEN WONDERS RAISED';
-      x.textContent = `Magnificent. Final score: ${score.toLocaleString()}. The ancient world stands complete.`;
-      $('btnNext').textContent = 'Finish';
       submitRun();
-    } else if (lastOfWonder){
+      startFinale();                          // Egyptian grand finale on the board canvas
+      return;
+    }
+    const t = $('doneTitle'), x = $('doneText');
+    if (lastOfWonder){
       t.textContent = WONDERS[wIdx].name.toUpperCase() + ' COMPLETE';
       x.textContent = 'The builders cheer — a wonder rises against the dusk. Onward to the next marvel.';
       $('btnNext').textContent = 'Next Wonder';
@@ -413,7 +539,9 @@ function checkComplete(){
       $('btnNext').textContent = 'Continue';
     }
     beep(523,0.12); setTimeout(()=>beep(659,0.12),120); setTimeout(()=>beep(784,0.2),240);
+    $('doneOverlay').classList.add('celebrate');
     $('doneOverlay').classList.remove('hidden');
+    startFireworks(4500);
   }
 }
 
@@ -481,6 +609,10 @@ function update(dt){
   floaters = floaters.filter(f=>{ f.t += dt; return f.t < 0.9; });
   if (shakeT>0) shakeT -= dt;
 
+  const nowMs = performance.now();
+  if (fw.active) stepFireworks(dt, nowMs);
+  if (finale.active) stepFinale(dt);
+
   // hint timer: only ticks while waiting for player input
   if (state==='idle'){
     idleT += dt;
@@ -537,6 +669,7 @@ function update(dt){
           ensureMoves();
           state='idle';
           checkComplete();
+          autoSave();   // no-op if the level just completed
         }
       }
     }
@@ -561,7 +694,7 @@ function update(dt){
     if (!busy){
       syncHud();
       if (applyGravity()) state='resolving';
-      else { ensureMoves(); state='idle'; checkComplete(); }
+      else { ensureMoves(); state='idle'; checkComplete(); autoSave(); }
     }
   }
 
@@ -569,6 +702,7 @@ function update(dt){
     timeLeft -= dt;
     if (timeLeft<=0){
       timeLeft = 0; state='fail';
+      clearSnapshot();
       $('failText').textContent = `Time has expired at ${score.toLocaleString()} points.`;
       submitRun();
       $('failOverlay').classList.remove('hidden');
@@ -662,6 +796,7 @@ function drawStone(g, p, x, y){
   g.restore();
 }
 function draw(){
+  if (finale.active){ drawFinale(); return; }
   ctx.save();
   ctx.clearRect(0,0,cv.width,cv.height);
   if (shakeT>0){
@@ -671,10 +806,6 @@ function draw(){
 
   ctx.fillStyle = 'rgba(232,198,106,0.10)';
   ctx.fillRect(0, (ROWS-1)*CELL, COLS*CELL, CELL);
-  ctx.strokeStyle = 'rgba(232,198,106,0.35)';
-  ctx.setLineDash([6,5]);
-  ctx.strokeRect(1.5,(ROWS-1)*CELL+1.5, COLS*CELL-3, CELL-3);
-  ctx.setLineDash([]);
 
   for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
     const p = grid[r][c];
@@ -726,6 +857,7 @@ function draw(){
     ctx.fillText(f.txt, f.x, f.y - f.t*40);
   }
   ctx.globalAlpha = 1;
+  if (fw.active) drawFireworks();
   ctx.restore();
 }
 
@@ -753,12 +885,6 @@ function drawWonderPanel(){
   wctx.strokeStyle = '#170f20';
   drawWonderShape(wctx, wIdx, W, H-18);
   wctx.restore();
-
-  if (prog<1 && state!=='menu'){
-    wctx.strokeStyle = 'rgba(255,233,173,0.7)'; wctx.setLineDash([4,4]);
-    wctx.beginPath(); wctx.moveTo(8,(H-18)-revealH); wctx.lineTo(W-8,(H-18)-revealH); wctx.stroke();
-    wctx.setLineDash([]);
-  }
 
   drawWorkers(wctx, W, H-18);
 }
@@ -891,6 +1017,209 @@ function drawWonderShape(g, idx, W, baseY){
   }
 }
 
+/* ---------- fireworks (level complete) ---------- */
+function stepFireworks(dt, now){
+  if (now < fw.until && now > fw.next && fw.rockets.length < 4){
+    fw.rockets.push({
+      x: 60 + Math.random()*(COLS*CELL-120),
+      y: ROWS*CELL - 10,
+      vy: -(330 + Math.random()*100),
+      targetY: 60 + Math.random()*(ROWS*CELL*0.35),
+      col: GEMS[rnd(GEM_COUNT)].c1,
+      trail: [],
+    });
+    fw.next = now + 280 + Math.random()*370;
+  }
+  for (let i=fw.rockets.length-1; i>=0; i--){
+    const r = fw.rockets[i];
+    r.y += r.vy*dt; r.vy += 60*dt;
+    r.trail.push({x:r.x, y:r.y}); if (r.trail.length>8) r.trail.shift();
+    if (r.y <= r.targetY){
+      const n = 70 + rnd(50);
+      for (let k=0;k<n;k++){
+        const a = Math.random()*Math.PI*2, sp = 40 + Math.random()*170;
+        fw.sparks.push({x:r.x, y:r.y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+          life:0.7+Math.random()*0.7, t:0, col: Math.random()<0.35 ? '#ffe9ad' : r.col,
+          sz:1.6+Math.random()*1.6});
+      }
+      fw.rockets.splice(i,1);
+    }
+  }
+  for (let i=fw.sparks.length-1; i>=0; i--){
+    const s = fw.sparks[i];
+    s.t += dt; s.x += s.vx*dt; s.y += s.vy*dt; s.vy += 170*dt; s.vx *= 0.985;
+    if (s.t >= s.life) fw.sparks.splice(i,1);
+  }
+  if (now >= fw.until && fw.rockets.length===0 && fw.sparks.length===0) fw.active = false;
+}
+function drawFireworks(){
+  for (const r of fw.rockets){
+    ctx.strokeStyle = 'rgba(255,233,173,0.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    r.trail.forEach((p,i)=> i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+    ctx.stroke();
+    ctx.fillStyle = '#ffe9ad';
+    ctx.beginPath(); ctx.arc(r.x, r.y, 2.4, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const s of fw.sparks){
+    ctx.globalAlpha = Math.max(0, 1 - s.t/s.life);
+    ctx.fillStyle = s.col;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.sz, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/* ---------- Egyptian grand finale (campaign complete) ---------- */
+function stepFinale(dt){
+  finale.t += dt;
+  if (!finale.btnShown && finale.t > 4.5){
+    finale.btnShown = true;
+    $('finaleOverlay').classList.remove('hidden');
+  }
+  if (Math.random() < dt*5){
+    const kinds = ['ankh','eye','scarab'];
+    finale.glyphs.push({kind:kinds[rnd(3)], x:40+Math.random()*(COLS*CELL-80), y:ROWS*CELL-90,
+      vy:-(18+Math.random()*16), t:0, life:4+Math.random()*2.5,
+      s:0.7+Math.random()*0.55, rot:(Math.random()-0.5)*0.3});
+  }
+  if (Math.random() < dt*40){
+    finale.confetti.push({x:Math.random()*COLS*CELL, y:-6, vy:28+Math.random()*27,
+      vx:(Math.random()-0.5)*24, t:0, sz:2+Math.random()*2.2,
+      col: Math.random()<0.6 ? '#e8c66a' : '#ffe9ad', spin:2+Math.random()*4});
+  }
+  const now = performance.now();
+  if (now > finale.next){
+    const bx = 60+Math.random()*(COLS*CELL-120), by = 50+Math.random()*100;
+    for (let i=0;i<60;i++){
+      const a = Math.random()*Math.PI*2, sp = 30+Math.random()*140;
+      finale.sparks.push({x:bx, y:by, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+        t:0, life:0.6+Math.random()*0.6, sz:1.5+Math.random()*1.3});
+    }
+    finale.next = now + 700 + Math.random()*700;
+  }
+  for (let i=finale.glyphs.length-1;i>=0;i--){
+    const g = finale.glyphs[i]; g.t += dt; g.y += g.vy*dt;
+    if (g.t >= g.life) finale.glyphs.splice(i,1);
+  }
+  for (let i=finale.confetti.length-1;i>=0;i--){
+    const c = finale.confetti[i]; c.t += dt; c.y += c.vy*dt; c.x += c.vx*dt;
+    if (c.y > ROWS*CELL+8) finale.confetti.splice(i,1);
+  }
+  for (let i=finale.sparks.length-1;i>=0;i--){
+    const s = finale.sparks[i]; s.t += dt; s.x += s.vx*dt; s.y += s.vy*dt; s.vy += 150*dt;
+    if (s.t >= s.life) finale.sparks.splice(i,1);
+  }
+}
+function drawFinaleGlyph(g){
+  const a = Math.min(1, g.t*2) * Math.max(0, 1-(g.t/g.life));
+  ctx.save();
+  ctx.translate(g.x, g.y); ctx.rotate(g.rot); ctx.scale(g.s, g.s);
+  ctx.globalAlpha = a;
+  ctx.strokeStyle = '#ffe9ad'; ctx.fillStyle = '#ffe9ad'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  if (g.kind==='ankh'){
+    ctx.beginPath(); ctx.ellipse(0,-9,5,7,0,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-2); ctx.lineTo(0,14); ctx.moveTo(-7,3); ctx.lineTo(7,3); ctx.stroke();
+  } else if (g.kind==='eye'){
+    ctx.beginPath(); ctx.moveTo(-10,0); ctx.quadraticCurveTo(0,-9,10,0); ctx.quadraticCurveTo(0,7,-10,0); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,-0.5,2.6,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(4,5); ctx.lineTo(7,13); ctx.moveTo(-2,6); ctx.quadraticCurveTo(-4,12,-9,12); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.ellipse(0,0,6,8,0,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-8); ctx.lineTo(0,8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-6,-3); ctx.quadraticCurveTo(-14,-6,-16,0);
+    ctx.moveTo(6,-3); ctx.quadraticCurveTo(14,-6,16,0); ctx.stroke();
+    for (const sgn of [-1,1]) for (let i=0;i<3;i++){
+      ctx.beginPath(); ctx.moveTo(sgn*5,-4+i*4); ctx.lineTo(sgn*10,-2+i*4.5); ctx.stroke();
+    }
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+function drawTorchWalker(x, gy, phase, dir){
+  const s = Math.sin(phase);
+  const bob = Math.abs(s)*1.2, hipY = gy-7-bob, headY = gy-13.5-bob;
+  ctx.strokeStyle = '#14101f'; ctx.fillStyle = '#14101f'; ctx.lineWidth = 1.7; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x,hipY); ctx.lineTo(x+dir*s*3.2,gy);
+  ctx.moveTo(x,hipY); ctx.lineTo(x-dir*s*3.2,gy);
+  ctx.moveTo(x,hipY); ctx.lineTo(x,headY+2.5);
+  ctx.moveTo(x,headY+4.5); ctx.lineTo(x+dir*3.4,headY-4);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(x,headY,2.3,0,Math.PI*2); ctx.fill();
+  const fl = 1.6 + Math.sin(phase*5)*0.8;
+  ctx.fillStyle = 'rgba(255,200,110,0.95)';
+  ctx.beginPath(); ctx.arc(x+dir*3.9, headY-6.2, fl, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,240,200,0.8)';
+  ctx.beginPath(); ctx.arc(x+dir*3.9, headY-6.2, fl*0.45, 0, Math.PI*2); ctx.fill();
+}
+function drawFinale(){
+  const Wp = COLS*CELL, Hp = ROWS*CELL, T = finale.t;
+  const sky = ctx.createLinearGradient(0,0,0,Hp);
+  sky.addColorStop(0,'#241a4a'); sky.addColorStop(0.5,'#6e3f6c');
+  sky.addColorStop(0.78,'#c4683f'); sky.addColorStop(1,'#7e4029');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,Wp,Hp);
+
+  const cxp = Wp/2, apexY = Hp*0.40, sunY = apexY-26;
+  ctx.save(); ctx.translate(cxp,sunY); ctx.rotate(T*0.12);
+  ctx.strokeStyle = 'rgba(255,225,160,0.30)'; ctx.lineWidth = 3;
+  for (let i=0;i<12;i++){ ctx.rotate(Math.PI/6);
+    ctx.beginPath(); ctx.moveTo(0,34); ctx.lineTo(0,52+6*Math.sin(T*2+i)); ctx.stroke(); }
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255,225,160,0.95)';
+  ctx.beginPath(); ctx.arc(cxp,sunY,20,0,Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#3a2a22'; ctx.fillRect(0,Hp-70,Wp,70);
+
+  ctx.fillStyle = '#231933';
+  ctx.beginPath(); ctx.moveTo(cxp-150,Hp-70); ctx.lineTo(cxp,apexY); ctx.lineTo(cxp+150,Hp-70); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  ctx.beginPath(); ctx.moveTo(cxp,apexY); ctx.lineTo(cxp+150,Hp-70); ctx.lineTo(cxp+44,Hp-70); ctx.closePath(); ctx.fill();
+  const beamA = 0.18 + 0.12*Math.sin(T*2.2);
+  const beam = ctx.createLinearGradient(0,0,0,apexY);
+  beam.addColorStop(0,'rgba(255,233,173,0)'); beam.addColorStop(1,'rgba(255,233,173,'+beamA+')');
+  ctx.fillStyle = beam;
+  ctx.beginPath(); ctx.moveTo(cxp-7,apexY); ctx.lineTo(cxp-30,0); ctx.lineTo(cxp+30,0); ctx.lineTo(cxp+7,apexY); ctx.closePath(); ctx.fill();
+
+  const dots = Math.min(7, Math.floor(T/0.8));
+  for (let i=0;i<7;i++){
+    const x = Wp/2+(i-3)*42, y = 30;
+    ctx.beginPath(); ctx.arc(x,y,9,0,Math.PI*2);
+    if (i<dots){ ctx.fillStyle='#e8c66a'; ctx.shadowColor='#e8c66a'; ctx.shadowBlur=12; ctx.fill(); ctx.shadowBlur=0; }
+    else { ctx.strokeStyle='#5b478f'; ctx.lineWidth=1.5; ctx.stroke(); }
+  }
+
+  for (let i=0;i<6;i++){
+    const speed = 22+i*4, span = Wp+30;
+    let x = ((T*speed + i*span/6) % span) - 15;
+    drawTorchWalker(x, Hp-26-(i%2)*9, T*7+i*2, i%2 ? -1 : 1);
+  }
+
+  for (const g of finale.glyphs) drawFinaleGlyph(g);
+  for (const c of finale.confetti){
+    ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.t*c.spin);
+    ctx.fillStyle = c.col; ctx.fillRect(-c.sz/2,-c.sz/4,c.sz,c.sz/2); ctx.restore();
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const s of finale.sparks){
+    ctx.globalAlpha = Math.max(0,1-s.t/s.life); ctx.fillStyle = '#ffe9ad';
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.sz,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+
+  const sh = 0.5+0.5*Math.sin(T*3);
+  ctx.textAlign = 'center';
+  ctx.font = "900 26px Cinzel, Georgia, serif";
+  ctx.fillStyle = 'rgb('+(232+Math.floor(23*sh))+','+(198+Math.floor(35*sh))+','+(106+Math.floor(67*sh))+')';
+  ctx.shadowColor = 'rgba(232,198,106,0.6)'; ctx.shadowBlur = 16;
+  ctx.fillText('ALL SEVEN WONDERS RAISED', Wp/2, Hp-118);
+  ctx.shadowBlur = 0;
+  ctx.font = "13.5px 'Segoe UI', sans-serif"; ctx.fillStyle = '#f0d6a8';
+  ctx.fillText('The ancient world stands complete.', Wp/2, Hp-96);
+  ctx.font = "700 17px Cinzel, Georgia, serif"; ctx.fillStyle = '#ffe9ad';
+  ctx.fillText('Final score: '+score.toLocaleString(), Wp/2, Hp-72);
+}
+
 /* ---------- HUD ---------- */
 function syncHud(message){
   const wIdx = Math.min(WONDERS.length-1, Math.floor(levelIndex / LEVELS_PER_WONDER));
@@ -927,13 +1256,17 @@ function flash(t){
   flashTimer = setTimeout(()=>{ $('msg').textContent=''; }, 3500);
 }
 function hideOverlays(){
-  ['menuOverlay','doneOverlay','failOverlay','boardOverlay'].forEach(id=>$(id).classList.add('hidden'));
+  ['menuOverlay','doneOverlay','failOverlay','boardOverlay','finaleOverlay','pauseOverlay'].forEach(id=>$(id).classList.add('hidden'));
+  $('doneOverlay').classList.remove('celebrate');
 }
 function showMenu(){
-  state='menu'; hideOverlays();
+  state='menu'; stopCelebrations(); hideOverlays();
   $('menuOverlay').classList.remove('hidden');
   $('btnContinue').classList.toggle('hidden', profile.unlocked<=0);
   $('btnContinue').textContent = 'Continue · Lv '+(Math.min(profile.unlocked, TOTAL_LEVELS-1)+1);
+  const snap = loadSnapshot();
+  $('btnResumeGame').classList.toggle('hidden', !snap);
+  if (snap) $('btnResumeGame').textContent = 'Resume Game · Lv '+(snap.lv+1);
   syncHud();
 }
 
@@ -972,6 +1305,7 @@ function readName(){
 function beginRun(lv, timed){
   if (window.SWMusic) SWMusic.start();
   readName();
+  clearSnapshot();
   timedMode = timed;
   score = 0; runSubmitted = false;
   startLevel(lv);
@@ -985,9 +1319,38 @@ $('btnNext').addEventListener('click', ()=>{
 });
 $('btnRetry').addEventListener('click', ()=>{ score=0; runSubmitted=false; startLevel(levelIndex); });
 $('btnMenu').addEventListener('click', showMenu);
-$('btnQuit').addEventListener('click', ()=>{ if(state!=='menu') showMenu(); });
+$('btnQuit').addEventListener('click', ()=>{
+  if (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting') pauseGame();
+  else if (state!=='menu' && state!=='paused') showMenu();
+});
+$('btnResumePlay').addEventListener('click', unpauseGame);
+$('btnEndGame').addEventListener('click', ()=>{
+  saveSnapshot();
+  showMenu();
+  flash('Game saved — Resume Game continues from this exact point.');
+});
+$('btnResumeGame').addEventListener('click', ()=>{
+  if (window.SWMusic) SWMusic.start();
+  readName();
+  if (!resumeSnapshot()){ flash('No saved game found.'); showMenu(); }
+});
+$('btnFinaleDone').addEventListener('click', ()=>{ stopCelebrations(); showMenu(); });
 $('btnBoard').addEventListener('click', openLeaderboard);
 $('btnBoardBack').addEventListener('click', showMenu);
+$('btnBoardReset').addEventListener('click', async ()=>{
+  const pin = prompt('Admin PIN to reset the leaderboard:');
+  if (pin===null || pin==='') return;
+  if (!confirm('Permanently delete ALL leaderboard scores?')) return;
+  const list = $('boardList');
+  list.innerHTML = '<li class="dim">Resetting…</li>';
+  try{
+    const n = await SWCloud.resetLeaderboard(pin.trim());
+    flash(`Leaderboard reset — ${n} score${n===1?'':'s'} removed.`);
+    openLeaderboard();
+  }catch(e){
+    list.innerHTML = '<li class="dim">Reset refused — wrong PIN or offline.</li>';
+  }
+});
 
 function refreshToggles(){
   $('btnMusic').setAttribute('aria-pressed', String(profile.music));
@@ -1014,6 +1377,9 @@ function boot(){
   $('netTag').textContent = navigator.onLine===false ? 'offline' : 'online';
   window.addEventListener('online',  ()=>{ $('netTag').textContent='online'; });
   window.addEventListener('offline', ()=>{ $('netTag').textContent='offline'; });
+  // safety net: persist mid-level progress when the app is backgrounded or closed
+  document.addEventListener('visibilitychange', ()=>{ if (document.hidden) autoSave(); });
+  window.addEventListener('pagehide', ()=>{ autoSave(); });
   // pull cloud save if it is ahead of this device
   if (window.SWCloud){
     SWCloud.loadSave(profile.id).then(s=>{
