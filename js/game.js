@@ -1256,7 +1256,7 @@ function flash(t){
   flashTimer = setTimeout(()=>{ $('msg').textContent=''; }, 3500);
 }
 function hideOverlays(){
-  ['menuOverlay','doneOverlay','failOverlay','boardOverlay','finaleOverlay','pauseOverlay','exitOverlay'].forEach(id=>$(id).classList.add('hidden'));
+  ['menuOverlay','doneOverlay','failOverlay','boardOverlay','finaleOverlay','pauseOverlay'].forEach(id=>$(id).classList.add('hidden'));
   $('doneOverlay').classList.remove('celebrate');
 }
 function showMenu(){
@@ -1319,13 +1319,6 @@ $('btnNext').addEventListener('click', ()=>{
 });
 $('btnRetry').addEventListener('click', ()=>{ score=0; runSubmitted=false; startLevel(levelIndex); });
 $('btnMenu').addEventListener('click', showMenu);
-function saveAndExit(){
-  autoSave();
-  hideOverlays();
-  $('exitOverlay').classList.remove('hidden');
-  // Best-effort close (works on Android PWA; silently ignored by iOS)
-  setTimeout(()=>{ try{ window.close(); }catch(e){} }, 400);
-}
 $('btnQuit').addEventListener('click', ()=>{
   if (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting') pauseGame();
   else if (state!=='menu' && state!=='paused') showMenu();
@@ -1345,11 +1338,6 @@ $('btnEndGame').addEventListener('click', ()=>{
   saveSnapshot();
   showMenu();
   flash('Game saved — Resume Game continues from this exact point.');
-});
-$('btnExitGame').addEventListener('click', saveAndExit);
-$('btnExitBack').addEventListener('click', ()=>{
-  $('exitOverlay').classList.add('hidden');
-  unpauseGame();
 });
 $('btnResumeGame').addEventListener('click', ()=>{
   if (window.SWMusic) SWMusic.start();
