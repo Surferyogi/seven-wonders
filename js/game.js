@@ -67,6 +67,7 @@ let timedMode = true;
 let levelIndex = 0;
 let score = 0;
 let stonesCollected = 0, stoneQuota = 3, stonesToSpawn = 0;
+let tilesAtStart = 1;            // total tile-layers at level start (for the Tiles-left bar)
 let timeLeft = 120, timeMax = 120;
 let chain = 0;
 let selected = null;
@@ -167,6 +168,7 @@ function resumeSnapshot(){
   stoneQuota = quotaFor(s.lv);
   stonesCollected = s.stonesCollected;
   stonesToSpawn = s.stonesToSpawn;
+  tilesAtStart = Math.max(1, tilesRemaining());
   timeMax = timeFor(s.lv);
   timeLeft = timedMode ? Math.min(s.timeLeft, timeMax) : Infinity;
   chain = 0; selected = null; swapInfo = null;
@@ -244,6 +246,7 @@ function startLevel(lv){
   stoneQuota = quotaFor(lv);
   stonesToSpawn = stoneQuota;
   stonesCollected = 0;
+  tilesAtStart = Math.max(1, tilesRemaining());
   chain = 0; selected = null; swapInfo = null;
   particles = []; floaters = [];
   quotaMetAnnounced = false;
@@ -1323,6 +1326,7 @@ function syncHud(message){
   $('level').textContent = (levelIndex+1)+' / '+TOTAL_LEVELS;
   $('stones').textContent = stonesCollected+' / '+stoneQuota;
   $('tiles').textContent = tilesRemaining();
+  $('tileFill').style.width = Math.max(0, Math.min(100, (1 - tilesRemaining()/tilesAtStart)*100)) + '%';
   const strip = $('wondersStrip');
   strip.innerHTML='';
   for (let i=0;i<WONDERS.length;i++){
@@ -1343,7 +1347,9 @@ function syncBars(){
   }
   $('score').textContent = score.toLocaleString();
   $('stones').textContent = stonesCollected+' / '+stoneQuota;
-  $('tiles').textContent = tilesRemaining();
+  const tl = tilesRemaining();
+  $('tiles').textContent = tl;
+  $('tileFill').style.width = Math.max(0, Math.min(100, (1 - tl/tilesAtStart)*100)) + '%';
 }
 let flashTimer = null;
 function flash(t){
