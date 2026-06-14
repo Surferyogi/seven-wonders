@@ -39,6 +39,7 @@ header p{font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:#
 .barFill{height:100%; width:0%; border-radius:6px; transition:width .25s linear}
 #timeFill{background:linear-gradient(90deg,#7ec97e,#e8c66a 60%,#d96b4f)}
 #stoneFill{background:linear-gradient(90deg,#8fb6f2,var(--lapis))}
+#tileFill{background:linear-gradient(90deg,#f0d6a8,#b08a55)}
 #msg{min-height:18px; margin-top:10px; font-size:12.5px; color:#cdbbf3; text-align:center}
 .toggleRow{display:flex; gap:8px; margin-top:12px; justify-content:center}
 .tog{
