@@ -83,14 +83,17 @@ const HINT_DELAY = 5;            // seconds before a hint appears
 let gemCount = GEM_COUNT;        // colors in play this level (5 on level 1)
 const REFILL_COPY_BIAS = 0.14;   // chance a refilled gem copies the gem below it -> slightly more 4/5 matches
 let forgedCount = 0;             // lifetime Bomb/Storm forges (tuning telemetry)
+const SCORE_MILESTONE = 20000;   // every 20k points -> 3s fireworks
+let nextMilestone = SCORE_MILESTONE;  // re-armed to SCORE_MILESTONE on each run start
 
 /* ---------- celebrations ---------- */
-const fw = {active:false, until:0, next:0, rockets:[], sparks:[]};
+const fw = {active:false, until:0, next:0, intensity:1, rockets:[], sparks:[]};
 const finale = {active:false, t:0, next:0, btnShown:false, glyphs:[], confetti:[], sparks:[]};
-function startFireworks(durMs){
+function startFireworks(durMs, intensity){
   fw.active = true;
   fw.until = performance.now() + durMs;
   fw.next = 0;
+  fw.intensity = intensity || 1;   // 1 = milestone burst, >1 = denser level-complete
   fw.rockets.length = 0; fw.sparks.length = 0;
 }
 function startFinale(){
@@ -408,6 +411,7 @@ function applyMatches(set, forgeAt){
     addFloater(pts, final);
     if (timedMode) timeLeft = Math.min(timeMax, timeLeft + removed*0.35);
     beep(300+chain*90, 0.09, 'triangle', 0.05);
+    checkMilestone();
   }
   return removed;
 }
@@ -541,7 +545,7 @@ function checkComplete(){
     beep(523,0.12); setTimeout(()=>beep(659,0.12),120); setTimeout(()=>beep(784,0.2),240);
     $('doneOverlay').classList.add('celebrate');
     $('doneOverlay').classList.remove('hidden');
-    startFireworks(4500);
+    startFireworks(5000, 1.7);  // bigger, denser, 5 seconds
   }
 }
 
@@ -688,6 +692,7 @@ function update(dt){
           score += 150;
           beep(880,0.12,'sine',0.06);
           flash('Cornerstone delivered!');
+          checkMilestone();
         }
       }
     }
@@ -1017,9 +1022,24 @@ function drawWonderShape(g, idx, W, baseY){
   }
 }
 
+/* ---------- score milestone fireworks ---------- */
+function checkMilestone(){
+  if (finale.active) return;                 // finale owns the screen
+  if (state==='done' || state==='fail') return;
+  if (score >= nextMilestone){
+    // advance past any boundaries a big cascade may have crossed; fire once
+    while (score >= nextMilestone) nextMilestone += SCORE_MILESTONE;
+    if (!fw.active) startFireworks(3000, 1);   // 3s burst; don't stomp a richer celebration
+    flash('Milestone! ' + (nextMilestone - SCORE_MILESTONE).toLocaleString() + ' points.');
+    beep(700,0.1,'triangle',0.05); setTimeout(()=>beep(900,0.12,'triangle',0.05),110);
+  }
+}
+
 /* ---------- fireworks (level complete) ---------- */
 function stepFireworks(dt, now){
-  if (now < fw.until && now > fw.next && fw.rockets.length < 4){
+  const cap = fw.intensity>1 ? 7 : 4;
+  const gap = fw.intensity>1 ? 170 : 280;
+  if (now < fw.until && now > fw.next && fw.rockets.length < cap){
     fw.rockets.push({
       x: 60 + Math.random()*(COLS*CELL-120),
       y: ROWS*CELL - 10,
@@ -1028,14 +1048,14 @@ function stepFireworks(dt, now){
       col: GEMS[rnd(GEM_COUNT)].c1,
       trail: [],
     });
-    fw.next = now + 280 + Math.random()*370;
+    fw.next = now + gap + Math.random()*370;
   }
   for (let i=fw.rockets.length-1; i>=0; i--){
     const r = fw.rockets[i];
     r.y += r.vy*dt; r.vy += 60*dt;
     r.trail.push({x:r.x, y:r.y}); if (r.trail.length>8) r.trail.shift();
     if (r.y <= r.targetY){
-      const n = 70 + rnd(50);
+      const n = Math.round((70 + rnd(50)) * (fw.intensity>1 ? 1.5 : 1));
       for (let k=0;k<n;k++){
         const a = Math.random()*Math.PI*2, sp = 40 + Math.random()*170;
         fw.sparks.push({x:r.x, y:r.y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
@@ -1308,6 +1328,7 @@ function beginRun(lv, timed){
   clearSnapshot();
   timedMode = timed;
   score = 0; runSubmitted = false;
+  nextMilestone = SCORE_MILESTONE;
   startLevel(lv);
 }
 $('btnTimed').addEventListener('click', ()=> beginRun(0, true));
@@ -1317,11 +1338,21 @@ $('btnNext').addEventListener('click', ()=>{
   if (levelIndex===TOTAL_LEVELS-1){ showMenu(); }
   else startLevel(levelIndex+1);
 });
-$('btnRetry').addEventListener('click', ()=>{ score=0; runSubmitted=false; startLevel(levelIndex); });
+$('btnRetry').addEventListener('click', ()=>{ score=0; runSubmitted=false; nextMilestone=SCORE_MILESTONE; startLevel(levelIndex); });
 $('btnMenu').addEventListener('click', showMenu);
 $('btnQuit').addEventListener('click', ()=>{
   if (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting') pauseGame();
   else if (state!=='menu' && state!=='paused') showMenu();
+});
+$('btnExit').addEventListener('click', ()=>{
+  if (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting'||state==='paused'){
+    saveSnapshot();    // explicit save (auto-save already fired, but this guarantees it)
+    stopCelebrations();
+    showMenu();
+    flash('Game saved. Tap Resume Game to continue.');
+  } else {
+    showMenu();        // on menu/done/fail — just navigate
+  }
 });
 $('btnResumePlay').addEventListener('click', unpauseGame);
 $('btnEndGame').addEventListener('click', ()=>{
