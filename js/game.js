@@ -77,6 +77,7 @@ let floaters = [];
 let lastTs = 0;
 let shakeT = 0;
 let runSubmitted = false;        // guards double score submission per run
+let quotaMetAnnounced = false;   // one-shot 'now clear the tiles' guidance per level
 let idleT = 0;                   // seconds of no player input while idle
 let hintCells = null;            // {a:{r,c}, b:{r,c}} valid swap to highlight
 const HINT_DELAY = 5;            // seconds before a hint appears
@@ -182,7 +183,9 @@ function resumeSnapshot(){
   timeLeft = timedMode ? Math.min(s.timeLeft, timeMax) : Infinity;
   chain = 0; selected = null; swapInfo = null; pausedFrom = null;
   particles = []; floaters = [];
+  quotaMetAnnounced = (stonesCollected>=stoneQuota);
   resetHint();
+  resetBonus(); bonus.cooldownUntil = performance.now()/1000 + 8;
   state = 'resolving';   // engine settles, collects any bottom stones, then goes idle
   syncHud(`Resumed level ${s.lv+1}.`);
   hideOverlays();
@@ -255,7 +258,9 @@ function startLevel(lv){
   stonesCollected = 0;
   chain = 0; selected = null; swapInfo = null;
   particles = []; floaters = [];
+  quotaMetAnnounced = false;
   resetHint();
+  resetBonus(); bonus.cooldownUntil = performance.now()/1000 + 8;
   timeMax = timeFor(lv); timeLeft = timedMode ? timeMax : Infinity;
   state = 'idle';
   ensureMoves();
@@ -330,6 +335,65 @@ function findHint(){
   return moves.length ? moves[rnd(moves.length)] : null;
 }
 function resetHint(){ idleT = 0; hintCells = null; }
+
+/* ---------- Bonus Match (timed side-objective) ---------- */
+const bonus = { active:false, pair:null, until:0, cooldownUntil:0, freezeUntil:0 };
+const BONUS_WINDOW   = 18;   // seconds the proposed match stays available
+const BONUS_COOLDOWN = 25;   // seconds between bonus opportunities
+const BONUS_FREEZE   = 6;    // seconds the timer is frozen on success (timed mode)
+const BONUS_POINTS   = 750;  // modest reward; meaningful in both modes
+function resetBonus(){
+  bonus.active = false; bonus.pair = null;
+  bonus.until = 0; bonus.cooldownUntil = 0; bonus.freezeUntil = 0;
+}
+function samePair(p, a, b){
+  if (!p) return false;
+  const eq = (x,y)=> x.r===y.r && x.c===y.c;
+  return (eq(p.a,a) && eq(p.b,b)) || (eq(p.a,b) && eq(p.b,a));
+}
+function stepBonus(dt, nowMs){
+  // Bonus only runs during free play; never during celebrations or end states.
+  if (state==='paused' || state==='done' || state==='fail' || finale.active){ return; }
+  const nowS = nowMs/1000;
+  if (bonus.active){
+    // expire on timeout, or if the proposed swap is no longer valid (board changed)
+    if (nowS > bonus.until ||
+        !bonus.pair ||
+        !grid[bonus.pair.a.r][bonus.pair.a.c] || !grid[bonus.pair.b.r][bonus.pair.b.c] ||
+        !wouldMatchAfterSwap(bonus.pair.a.r,bonus.pair.a.c,bonus.pair.b.r,bonus.pair.b.c)){
+      bonus.active = false; bonus.pair = null;
+      bonus.cooldownUntil = nowS + BONUS_COOLDOWN;
+    }
+    return;
+  }
+  // propose a new bonus once the cooldown elapses and the board is settled & playable
+  if (state==='idle' && nowS >= bonus.cooldownUntil){
+    const mv = findHint();
+    if (mv){
+      bonus.active = true;
+      bonus.pair = mv;
+      bonus.until = nowS + BONUS_WINDOW;
+      flash('\u2726 Bonus Match! Make the glowing blue swap for a reward.');
+      beep(620,0.08,'sine',0.05);
+    } else {
+      bonus.cooldownUntil = nowS + 3;   // retry shortly if no move surfaced
+    }
+  }
+}
+function awardBonus(){
+  bonus.active = false; bonus.pair = null;
+  const nowS = performance.now()/1000;
+  bonus.cooldownUntil = nowS + BONUS_COOLDOWN;
+  score += BONUS_POINTS;
+  if (timedMode){
+    bonus.freezeUntil = nowS + BONUS_FREEZE;
+    flash('\u2726 Bonus! +' + BONUS_POINTS + ' and the clock is frozen briefly.');
+  } else {
+    flash('\u2726 Bonus! +' + BONUS_POINTS + ' points.');
+  }
+  beep(740,0.1,'triangle',0.06); setTimeout(()=>beep(988,0.12,'triangle',0.06),110);
+  checkMilestone();   // a bonus could tip the player over a 20k line
+}
 function ensureMoves(){
   let guard = 0;
   while (!hasMoves() && guard++ < 60){
@@ -518,6 +582,12 @@ function submitRun(){
     .catch(()=>flash('Offline — score not submitted.'));
 }
 function checkComplete(){
+  // Guidance for the common confusion: quota met but tiles still standing.
+  if (tilesRemaining()>0 && stonesCollected>=stoneQuota && !quotaMetAnnounced
+      && (state==='idle')){
+    quotaMetAnnounced = true;
+    flash('All cornerstones delivered — now shatter every last tile to raise the wonder!');
+  }
   if (tilesRemaining()===0 && stonesCollected>=stoneQuota){
     state = 'done';
     const wIdx = Math.floor(levelIndex / LEVELS_PER_WONDER);
@@ -616,6 +686,7 @@ function update(dt){
   const nowMs = performance.now();
   if (fw.active) stepFireworks(dt, nowMs);
   if (finale.active) stepFinale(dt);
+  stepBonus(dt, nowMs);
 
   // hint timer: only ticks while waiting for player input
   if (state==='idle'){
@@ -641,10 +712,14 @@ function update(dt){
         swapInfo = null; state = 'idle';
       } else {
         const forgeKey = b.r+','+b.c;
+        const wasBonus = bonus.active && samePair(bonus.pair, a, b);
         swapInfo = null;
         chain = 0;
         const m = findMatches();
-        if (m.size>0){ applyMatches(m, forgeKey); applyGravity(); state='resolving'; }
+        if (m.size>0){
+          if (wasBonus) awardBonus();
+          applyMatches(m, forgeKey); applyGravity(); state='resolving';
+        }
         else state = 'idle';
       }
     }
@@ -704,11 +779,11 @@ function update(dt){
   }
 
   if (timedMode && (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting')){
-    timeLeft -= dt;
+    if (!(bonus.freezeUntil > performance.now()/1000)) timeLeft -= dt;
     if (timeLeft<=0){
       timeLeft = 0; state='fail';
       clearSnapshot();
-      $('failText').textContent = `Time has expired at ${score.toLocaleString()} points.`;
+      $('failText').textContent = `The crew downed tools and walked off at ${score.toLocaleString()} points. Rally them for another attempt.`;
       submitRun();
       $('failOverlay').classList.remove('hidden');
       beep(150,0.4,'sawtooth',0.06);
@@ -835,8 +910,19 @@ function draw(){
     ctx.stroke();
   }
 
-  // hint: pulsing rings on a valid swap pair after idling
-  if (hintCells && state==='idle'){
+  // bonus match: pulsing CYAN rings on the proposed swap
+  if (bonus.active && bonus.pair){
+    const glow = 0.5 + 0.35*Math.sin(performance.now()/160);
+    ctx.strokeStyle = `rgba(120,216,255,${glow})`;
+    ctx.lineWidth = 4;
+    for (const cell of [bonus.pair.a, bonus.pair.b]){
+      const pul = 4+Math.sin(performance.now()/150)*2.5;
+      roundRect(ctx, cell.c*CELL+2-pul/2, cell.r*CELL+2-pul/2, CELL-4+pul, CELL-4+pul, 10);
+      ctx.stroke();
+    }
+  }
+  // hint: pulsing rings on a valid swap pair after idling (suppressed while a bonus is shown)
+  if (hintCells && state==='idle' && !bonus.active){
     const glow = 0.45 + 0.35*Math.sin(performance.now()/200);
     ctx.strokeStyle = `rgba(255,233,173,${glow})`;
     ctx.lineWidth = 3.5;
@@ -1248,6 +1334,7 @@ function syncHud(message){
   $('score').textContent = score.toLocaleString();
   $('level').textContent = (levelIndex+1)+' / '+TOTAL_LEVELS;
   $('stones').textContent = stonesCollected+' / '+stoneQuota;
+  $('tiles').textContent = tilesRemaining();
   const strip = $('wondersStrip');
   strip.innerHTML='';
   for (let i=0;i<WONDERS.length;i++){
@@ -1268,6 +1355,7 @@ function syncBars(){
   }
   $('score').textContent = score.toLocaleString();
   $('stones').textContent = stonesCollected+' / '+stoneQuota;
+  $('tiles').textContent = tilesRemaining();
 }
 let flashTimer = null;
 function flash(t){
@@ -1329,6 +1417,7 @@ function beginRun(lv, timed){
   timedMode = timed;
   score = 0; runSubmitted = false;
   nextMilestone = SCORE_MILESTONE;
+  resetBonus();
   startLevel(lv);
 }
 $('btnTimed').addEventListener('click', ()=> beginRun(0, true));
