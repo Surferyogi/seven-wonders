@@ -111,18 +111,6 @@ function stopCelebrations(){
 
 /* ---------- pause & mid-level save (resume) ---------- */
 const RESUME_KEY = 'sw_resume_v1';
-let pausedFrom = null;
-function pauseGame(){
-  pausedFrom = state;
-  state = 'paused';
-  $('pauseOverlay').classList.remove('hidden');
-}
-function unpauseGame(){
-  $('pauseOverlay').classList.add('hidden');
-  state = pausedFrom || 'idle';
-  pausedFrom = null;
-  resetHint();
-}
 function saveSnapshot(){
   const cells = [];
   for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
@@ -151,7 +139,7 @@ function clearSnapshot(){
   try{ localStorage.removeItem(RESUME_KEY); }catch(e){}
 }
 function inPlay(){
-  return state==='idle'||state==='swapping'||state==='resolving'||state==='collecting'||state==='paused';
+  return state==='idle'||state==='swapping'||state==='resolving'||state==='collecting';
 }
 function autoSave(){ if (inPlay()) saveSnapshot(); }
 function resumeSnapshot(){
@@ -181,7 +169,7 @@ function resumeSnapshot(){
   stonesToSpawn = s.stonesToSpawn;
   timeMax = timeFor(s.lv);
   timeLeft = timedMode ? Math.min(s.timeLeft, timeMax) : Infinity;
-  chain = 0; selected = null; swapInfo = null; pausedFrom = null;
+  chain = 0; selected = null; swapInfo = null;
   particles = []; floaters = [];
   quotaMetAnnounced = (stonesCollected>=stoneQuota);
   resetHint();
@@ -353,7 +341,7 @@ function samePair(p, a, b){
 }
 function stepBonus(dt, nowMs){
   // Bonus only runs during free play; never during celebrations or end states.
-  if (state==='paused' || state==='done' || state==='fail' || finale.active){ return; }
+  if (state==='done' || state==='fail' || finale.active){ return; }
   const nowS = nowMs/1000;
   if (bonus.active){
     // expire on timeout, or if the proposed swap is no longer valid (board changed)
@@ -1364,7 +1352,7 @@ function flash(t){
   flashTimer = setTimeout(()=>{ $('msg').textContent=''; }, 3500);
 }
 function hideOverlays(){
-  ['menuOverlay','doneOverlay','failOverlay','boardOverlay','finaleOverlay','pauseOverlay'].forEach(id=>$(id).classList.add('hidden'));
+  ['menuOverlay','doneOverlay','failOverlay','boardOverlay','finaleOverlay'].forEach(id=>$(id).classList.add('hidden'));
   $('doneOverlay').classList.remove('celebrate');
 }
 function showMenu(){
@@ -1430,24 +1418,10 @@ $('btnNext').addEventListener('click', ()=>{
 $('btnRetry').addEventListener('click', ()=>{ score=0; runSubmitted=false; nextMilestone=SCORE_MILESTONE; startLevel(levelIndex); });
 $('btnMenu').addEventListener('click', showMenu);
 $('btnQuit').addEventListener('click', ()=>{
-  if (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting') pauseGame();
-  else if (state!=='menu' && state!=='paused') showMenu();
-});
-$('btnExit').addEventListener('click', ()=>{
-  if (state==='idle'||state==='swapping'||state==='resolving'||state==='collecting'||state==='paused'){
-    saveSnapshot();    // explicit save (auto-save already fired, but this guarantees it)
-    stopCelebrations();
-    showMenu();
-    flash('Game saved. Tap Resume Game to continue.');
-  } else {
-    showMenu();        // on menu/done/fail — just navigate
-  }
-});
-$('btnResumePlay').addEventListener('click', unpauseGame);
-$('btnEndGame').addEventListener('click', ()=>{
-  saveSnapshot();
+  if (state==='menu') return;
+  autoSave();          // preserve an interrupted game for Resume Game (safety net intact)
+  stopCelebrations();
   showMenu();
-  flash('Game saved — Resume Game continues from this exact point.');
 });
 $('btnResumeGame').addEventListener('click', ()=>{
   if (window.SWMusic) SWMusic.start();
