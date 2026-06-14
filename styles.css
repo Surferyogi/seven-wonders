@@ -32,8 +32,9 @@ header p{font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:#
 #wonderName{font-family:'Cinzel',serif; font-size:17px; font-weight:700; color:var(--gold); letter-spacing:.06em; text-align:center}
 #wonderSub{font-size:11px; color:#9b86c9; text-align:center; letter-spacing:.18em; text-transform:uppercase; margin:2px 0 8px}
 #wonderCanvas{display:block; width:100%; border-radius:10px; border:1px solid #3d2f66}
-.statRow{display:flex; justify-content:space-between; align-items:baseline; margin-top:10px; font-size:13px; color:#bfa9ea}
-.statRow b{font-family:'Cinzel',serif; color:var(--sandlight); font-size:16px; letter-spacing:.05em}
+.statRow{display:flex; justify-content:space-between; align-items:baseline; margin-top:10px; font-size:13px; color:#d3c2f0}
+.statRow b{font-family:'Cinzel',serif; color:#fff3cf; font-size:16px; letter-spacing:.05em}
+#score{color:#ffe9ad; text-shadow:0 0 10px rgba(255,233,173,.35)}
 .barWrap{margin-top:6px; height:10px; border-radius:6px; background:#140e29; border:1px solid #3d2f66; overflow:hidden}
 .barFill{height:100%; width:0%; border-radius:6px; transition:width .25s linear}
 #timeFill{background:linear-gradient(90deg,#7ec97e,#e8c66a 60%,#d96b4f)}
@@ -46,6 +47,8 @@ header p{font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:#
 }
 .tog[aria-pressed="false"]{opacity:.45; text-decoration:line-through}
 .tog:hover{border-color:var(--gold)}
+.tog.exit{color:#e8998a; border-color:#6b3a3a; background:#1f1020;}
+.tog.exit:hover{border-color:#d96b4f; color:#f0b8a8;}
 
 /* ---------- board ---------- */
 #boardWrap{position:relative; flex:0 0 auto}
