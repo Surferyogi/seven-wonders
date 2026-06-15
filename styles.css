@@ -33,6 +33,8 @@ header p{font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:#
 #wonderSub{font-size:11px; color:#9b86c9; text-align:center; letter-spacing:.18em; text-transform:uppercase; margin:2px 0 8px}
 #wonderCanvas{display:block; width:100%; border-radius:10px; border:1px solid #3d2f66}
 .statRow{display:flex; justify-content:space-between; align-items:baseline; margin-top:10px; font-size:13px; color:#d3c2f0}
+.statRow span{display:inline-flex; align-items:center; gap:7px}
+.micon{width:16px; height:15px; flex:0 0 auto; vertical-align:middle; transform:translateY(1px)}
 .statRow b{font-family:'Cinzel',serif; color:#fff3cf; font-size:16px; letter-spacing:.05em}
 #score{color:#ffe9ad; text-shadow:0 0 10px rgba(255,233,173,.35)}
 .barWrap{margin-top:6px; height:10px; border-radius:6px; background:#140e29; border:1px solid #3d2f66; overflow:hidden}
