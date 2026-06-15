@@ -801,19 +801,6 @@ function drawTile(r,c){
     roundRect(ctx, x+2.5, y+2.5, CELL-5, CELL-5, 7); ctx.fill();
     ctx.strokeStyle = L===2 ? '#4f3d27' : '#8a6a3e';
     ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.strokeStyle = 'rgba(0,0,0,0.30)'; ctx.lineWidth=2.2; ctx.lineCap='round';
-    const m = 11;
-    ctx.beginPath();
-    ctx.moveTo(x+m, y+m); ctx.lineTo(x+CELL-m, y+CELL-m);
-    ctx.moveTo(x+CELL-m, y+m); ctx.lineTo(x+m, y+CELL-m);
-    ctx.stroke();
-    // subtle highlight offset so the X looks carved into the stone
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth=1;
-    ctx.beginPath();
-    ctx.moveTo(x+m, y+m+1.4); ctx.lineTo(x+CELL-m, y+CELL-m+1.4);
-    ctx.moveTo(x+CELL-m, y+m+1.4); ctx.lineTo(x+m, y+CELL-m+1.4);
-    ctx.stroke();
-    ctx.lineCap='butt';
     if (L===2){
       ctx.strokeStyle='rgba(255,255,255,0.12)';
       ctx.strokeRect(x+7.5,y+7.5,CELL-15,CELL-15);
@@ -874,6 +861,24 @@ function drawStone(g, p, x, y){
   g.stroke();
   g.restore();
 }
+function drawStoneX(x, y){
+  // small, bold X stamped ON TOP of the gem to mark a stone tile
+  const h = CELL*0.19;               // half-length of each stroke from center => ~38% of cell
+  const cx = x+CELL/2, cy = y+CELL/2;
+  ctx.lineCap = 'round';
+  // dark outline first (so it reads on light gems), then bright core
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.moveTo(cx-h, cy-h); ctx.lineTo(cx+h, cy+h);
+  ctx.moveTo(cx+h, cy-h); ctx.lineTo(cx-h, cy+h);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(cx-h, cy-h); ctx.lineTo(cx+h, cy+h);
+  ctx.moveTo(cx+h, cy-h); ctx.lineTo(cx-h, cy+h);
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+}
 function draw(){
   if (finale.active){ drawFinale(); return; }
   ctx.save();
@@ -898,6 +903,11 @@ function draw(){
     const x = c*CELL+dx, y = r*CELL+dy;
     if (p.kind==='stone') drawStone(ctx,p,x,y);
     else drawGemShape(ctx,p,x,y,p.scale||1);
+  }
+
+  // stone marker: small bold X drawn ON TOP, so a tiled cell is obvious through its gem
+  for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
+    if (tiles[r][c] > 0) drawStoneX(c*CELL, r*CELL);
   }
 
   if (selected && state==='idle'){
