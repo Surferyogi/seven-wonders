@@ -1365,10 +1365,10 @@ function showMenu(){
   state='menu'; stopCelebrations(); hideOverlays();
   $('menuOverlay').classList.remove('hidden');
   $('btnContinue').classList.toggle('hidden', profile.unlocked<=0);
-  $('btnContinue').textContent = 'Continue · Lv '+(Math.min(profile.unlocked, TOTAL_LEVELS-1)+1);
+  $('btnContinue').textContent = 'Resume highest level · Lv '+(Math.min(profile.unlocked, TOTAL_LEVELS-1)+1);
   const snap = loadSnapshot();
   $('btnResumeGame').classList.toggle('hidden', !snap);
-  if (snap) $('btnResumeGame').textContent = 'Resume Game · Lv '+(snap.lv+1);
+  if (snap) $('btnResumeGame').textContent = 'Continue current game · Lv '+(snap.lv+1);
   syncHud();
 }
 
