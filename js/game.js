@@ -801,11 +801,19 @@ function drawTile(r,c){
     roundRect(ctx, x+2.5, y+2.5, CELL-5, CELL-5, 7); ctx.fill();
     ctx.strokeStyle = L===2 ? '#4f3d27' : '#8a6a3e';
     ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth=1;
+    ctx.strokeStyle = 'rgba(0,0,0,0.30)'; ctx.lineWidth=2.2; ctx.lineCap='round';
+    const m = 11;
     ctx.beginPath();
-    ctx.moveTo(x+6, y+CELL*0.45); ctx.lineTo(x+CELL-6, y+CELL*0.45);
-    ctx.moveTo(x+CELL*0.5, y+CELL*0.45); ctx.lineTo(x+CELL*0.5, y+CELL-6);
+    ctx.moveTo(x+m, y+m); ctx.lineTo(x+CELL-m, y+CELL-m);
+    ctx.moveTo(x+CELL-m, y+m); ctx.lineTo(x+m, y+CELL-m);
     ctx.stroke();
+    // subtle highlight offset so the X looks carved into the stone
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(x+m, y+m+1.4); ctx.lineTo(x+CELL-m, y+CELL-m+1.4);
+    ctx.moveTo(x+CELL-m, y+m+1.4); ctx.lineTo(x+m, y+CELL-m+1.4);
+    ctx.stroke();
+    ctx.lineCap='butt';
     if (L===2){
       ctx.strokeStyle='rgba(255,255,255,0.12)';
       ctx.strokeRect(x+7.5,y+7.5,CELL-15,CELL-15);
