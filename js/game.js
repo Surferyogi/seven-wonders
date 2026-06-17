@@ -863,16 +863,16 @@ function drawStone(g, p, x, y){
 }
 function drawStoneX(x, y){
   // small, bold X stamped ON TOP of the gem to mark a stone tile
-  const h = CELL*0.19;               // half-length of each stroke from center => ~38% of cell
+  const h = CELL*0.095;              // half-length of each stroke from center => ~19% of cell (50% of prior)
   const cx = x+CELL/2, cy = y+CELL/2;
   ctx.lineCap = 'round';
   // dark outline first (so it reads on light gems), then bright core
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 4.5;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 2.6;
   ctx.beginPath();
   ctx.moveTo(cx-h, cy-h); ctx.lineTo(cx+h, cy+h);
   ctx.moveTo(cx+h, cy-h); ctx.lineTo(cx-h, cy+h);
   ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 2.2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 1.4;
   ctx.beginPath();
   ctx.moveTo(cx-h, cy-h); ctx.lineTo(cx+h, cy+h);
   ctx.moveTo(cx+h, cy-h); ctx.lineTo(cx-h, cy+h);
