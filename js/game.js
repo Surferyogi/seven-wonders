@@ -1388,7 +1388,6 @@ function showMenu(){
   const snap = loadSnapshot();
   // null-safe button update (a missing element must never crash the menu)
   const setBtn = (id, hidden, text)=>{ const el = $(id); if (!el) return; el.classList.toggle('hidden', hidden); if (text!=null) el.textContent = text; };
-  setBtn('btnResumeGame', !snap, snap ? 'Continue current game · Lv '+(snap.lv+1) : null);
   // "Resume highest level": jump to the highest unlocked level with a fresh board
   const highIdx = Math.min(profile.unlocked, TOTAL_LEVELS-1);
   const showHigh = profile.unlocked > 0;
@@ -1458,11 +1457,6 @@ on('btnQuit', 'click', ()=>{
   autoSave();          // preserve an interrupted game for Resume Game (safety net intact)
   stopCelebrations();
   showMenu();
-});
-on('btnResumeGame', 'click', ()=>{
-  if (window.SWMusic) SWMusic.start();
-  readName();
-  if (!resumeSnapshot()){ flash('No saved game found.'); showMenu(); }
 });
 on('btnFinaleDone', 'click', ()=>{ stopCelebrations(); showMenu(); });
 on('btnBoard', 'click', openLeaderboard);
