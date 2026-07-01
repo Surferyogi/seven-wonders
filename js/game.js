@@ -1386,8 +1386,20 @@ function showMenu(){
   state='menu'; stopCelebrations(); hideOverlays();
   $('menuOverlay').classList.remove('hidden');
   const snap = loadSnapshot();
-  $('btnResumeGame').classList.toggle('hidden', !snap);
-  if (snap) $('btnResumeGame').textContent = 'Continue current game · Lv '+(snap.lv+1);
+  // null-safe button update (a missing element must never crash the menu)
+  const setBtn = (id, hidden, text)=>{ const el = $(id); if (!el) return; el.classList.toggle('hidden', hidden); if (text!=null) el.textContent = text; };
+  setBtn('btnResumeGame', !snap, snap ? 'Continue current game · Lv '+(snap.lv+1) : null);
+  // "Resume highest level": jump to the highest unlocked level with a fresh board
+  const highIdx = Math.min(profile.unlocked, TOTAL_LEVELS-1);
+  const showHigh = profile.unlocked > 0;
+  setBtn('btnContinue', !showHigh, showHigh ? 'Resume highest level · Lv '+(highIdx+1) : null);
+  // diagnostic readout: shows what progress is actually stored on this device
+  const pi = $('progressInfo');
+  if (pi){
+    const highTxt = 'Highest level reached: Lv '+(highIdx+1);
+    const saveTxt = snap ? ('Saved game: Lv '+(snap.lv+1)) : 'Saved game: none';
+    pi.textContent = highTxt + ' · ' + saveTxt;
+  }
   syncHud();
 }
 
@@ -1434,6 +1446,7 @@ function beginRun(lv, timed){
   startLevel(lv);
 }
 on('btnTimed', 'click', ()=> beginRun(0, false)); // New Game -> Relaxed mode
+on('btnContinue', 'click', ()=> beginRun(Math.min(profile.unlocked, TOTAL_LEVELS-1), false)); // Resume highest level (fresh board, relaxed)
 on('btnNext', 'click', ()=>{
   if (levelIndex===TOTAL_LEVELS-1){ showMenu(); }
   else startLevel(levelIndex+1);
