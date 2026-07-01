@@ -53,7 +53,7 @@ function loadProfile(){
     const p = JSON.parse(localStorage.getItem(STORE_KEY));
     if (p && p.id) return p;
   }catch(e){/* corrupt -> reset */}
-  return { id: uuid(), name:'', unlocked:0, bestScore:0, music:true, sfx:true, mode:'timed' };
+  return { id: uuid(), name:'', unlocked:0, bestScore:0, music:true, sfx:true, mode:'relaxed' };
 }
 function saveProfile(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(profile)); }catch(e){/* storage full/blocked */}
@@ -63,7 +63,7 @@ let profile = loadProfile();
 /* ---------- state ---------- */
 let grid, tiles;
 let state = 'menu';              // menu | idle | swapping | resolving | collecting | done | fail
-let timedMode = true;
+let timedMode = false;
 let levelIndex = 0;
 let score = 0;
 let stonesCollected = 0, stoneQuota = 3, stonesToSpawn = 0;
@@ -1382,8 +1382,6 @@ function hideOverlays(){
 function showMenu(){
   state='menu'; stopCelebrations(); hideOverlays();
   $('menuOverlay').classList.remove('hidden');
-  $('btnContinue').classList.toggle('hidden', profile.unlocked<=0);
-  $('btnContinue').textContent = 'Resume highest level · Lv '+(Math.min(profile.unlocked, TOTAL_LEVELS-1)+1);
   const snap = loadSnapshot();
   $('btnResumeGame').classList.toggle('hidden', !snap);
   if (snap) $('btnResumeGame').textContent = 'Continue current game · Lv '+(snap.lv+1);
@@ -1432,9 +1430,7 @@ function beginRun(lv, timed){
   resetBonus();
   startLevel(lv);
 }
-$('btnTimed').addEventListener('click', ()=> beginRun(0, true));
-$('btnRelax').addEventListener('click', ()=> beginRun(0, false));
-$('btnContinue').addEventListener('click', ()=> beginRun(Math.min(profile.unlocked, TOTAL_LEVELS-1), profile.mode!=='relaxed'));
+$('btnTimed').addEventListener('click', ()=> beginRun(0, false)); // New Game -> Relaxed mode
 $('btnNext').addEventListener('click', ()=>{
   if (levelIndex===TOTAL_LEVELS-1){ showMenu(); }
   else startLevel(levelIndex+1);
