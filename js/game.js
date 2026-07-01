@@ -184,6 +184,9 @@ function resumeSnapshot(){
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
+// safe event binder: never throws if an element id is absent (guards against
+// a removed button leaving an orphaned handler that halts the whole script)
+function on(id, ev, fn){ const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); }
 const rnd = n => Math.floor(Math.random()*n);
 const inB = (r,c) => r>=0 && r<ROWS && c>=0 && c<COLS;
 const beep = (f,d,t,g) => window.SWMusic && SWMusic.beep(f,d,t,g);
@@ -1430,28 +1433,28 @@ function beginRun(lv, timed){
   resetBonus();
   startLevel(lv);
 }
-$('btnTimed').addEventListener('click', ()=> beginRun(0, false)); // New Game -> Relaxed mode
-$('btnNext').addEventListener('click', ()=>{
+on('btnTimed', 'click', ()=> beginRun(0, false)); // New Game -> Relaxed mode
+on('btnNext', 'click', ()=>{
   if (levelIndex===TOTAL_LEVELS-1){ showMenu(); }
   else startLevel(levelIndex+1);
 });
-$('btnRetry').addEventListener('click', ()=>{ score=0; runSubmitted=false; nextMilestone=SCORE_MILESTONE; startLevel(levelIndex); });
-$('btnMenu').addEventListener('click', showMenu);
-$('btnQuit').addEventListener('click', ()=>{
+on('btnRetry', 'click', ()=>{ score=0; runSubmitted=false; nextMilestone=SCORE_MILESTONE; startLevel(levelIndex); });
+on('btnMenu', 'click', showMenu);
+on('btnQuit', 'click', ()=>{
   if (state==='menu') return;
   autoSave();          // preserve an interrupted game for Resume Game (safety net intact)
   stopCelebrations();
   showMenu();
 });
-$('btnResumeGame').addEventListener('click', ()=>{
+on('btnResumeGame', 'click', ()=>{
   if (window.SWMusic) SWMusic.start();
   readName();
   if (!resumeSnapshot()){ flash('No saved game found.'); showMenu(); }
 });
-$('btnFinaleDone').addEventListener('click', ()=>{ stopCelebrations(); showMenu(); });
-$('btnBoard').addEventListener('click', openLeaderboard);
-$('btnBoardBack').addEventListener('click', showMenu);
-$('btnBoardReset').addEventListener('click', async ()=>{
+on('btnFinaleDone', 'click', ()=>{ stopCelebrations(); showMenu(); });
+on('btnBoard', 'click', openLeaderboard);
+on('btnBoardBack', 'click', showMenu);
+on('btnBoardReset', 'click', async ()=>{
   const pin = prompt('Admin PIN to reset the leaderboard:');
   if (pin===null || pin==='') return;
   if (!confirm('Permanently delete ALL leaderboard scores?')) return;
@@ -1470,11 +1473,11 @@ function refreshToggles(){
   $('btnMusic').setAttribute('aria-pressed', String(profile.music));
   $('btnSfx').setAttribute('aria-pressed', String(profile.sfx));
 }
-$('btnMusic').addEventListener('click', ()=>{
+on('btnMusic', 'click', ()=>{
   profile.music = !profile.music; saveProfile(); refreshToggles();
   if (window.SWMusic){ SWMusic.start(); SWMusic.setMusic(profile.music); }
 });
-$('btnSfx').addEventListener('click', ()=>{
+on('btnSfx', 'click', ()=>{
   profile.sfx = !profile.sfx; saveProfile(); refreshToggles();
   if (window.SWMusic){ SWMusic.setSfx(profile.sfx); }
 });
